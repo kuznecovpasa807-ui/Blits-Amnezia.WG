@@ -34,6 +34,33 @@ def _clean_client_name(value: str) -> str:
     return value or "client"
 
 
+def _inject_client_edit_buttons(html_text: str) -> str:
+    """
+    Add an Edit button to every client row on the clients list page.
+    This keeps the template untouched while exposing the new edit route in the panel UI.
+    """
+    if "Редактировать клиента" in html_text:
+        return html_text
+
+    pattern = re.compile(
+        r"(<button class=\"btn btn-primary btn-sm\" onclick=\"openConfigModal\('([^']+)'\)\" title=\"Конфигурация ключа\">\s*"
+        r"<i class=\"fa-solid fa-key\"></i> Конфиг\s*</button>)"
+    )
+
+    def repl(match: re.Match) -> str:
+        client_id = html.escape(match.group(2), quote=True)
+        edit_button = (
+            f'<a href="/clients/{client_id}/edit" '
+            'class="btn btn-secondary btn-sm btn-icon-only" '
+            'title="Редактировать клиента">'
+            '<i class="fa-solid fa-pen-to-square"></i>'
+            '</a>'
+        )
+        return edit_button + "\n                                                " + match.group(1)
+
+    return pattern.sub(repl, html_text)
+
+
 @web_router.get("/clients/{client_id}/edit", response_class=HTMLResponse)
 async def edit_client_page(
     request: Request,
@@ -162,6 +189,31 @@ app = FastAPI(
     version="1.0.0"
 )
 app.add_middleware(WebGateMiddleware)
+
+
+@app.middleware("http")
+async def add_client_edit_buttons(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path != "/clients" or response.status_code != 200:
+        return response
+    content_type = response.headers.get("content-type", "")
+    if "text/html" not in content_type:
+        return response
+
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk
+
+    try:
+        html_text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return HTMLResponse(content=body, status_code=response.status_code, headers=dict(response.headers))
+
+    html_text = _inject_client_edit_buttons(html_text)
+    headers = dict(response.headers)
+    headers.pop("content-length", None)
+    return HTMLResponse(content=html_text, status_code=response.status_code, headers=headers)
+
 
 # Создание необходимых папок при запуске
 @app.on_event("startup")
