@@ -4,9 +4,27 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse
 from app.database import init_db
 from app.config import DATA_DIR, logger
-from app.routes import router as web_router
+import app.routes as web_routes
 from app.api import router as api_router
 from app.web_gate import WebGateMiddleware
+
+web_router = web_routes.router
+_original_client_view = web_routes._client_view
+
+
+def _client_view_disabled_clients_offline(row: dict, connection_statuses: dict, traffic_usage: dict) -> dict:
+    """
+    Keep disabled clients visually offline even if awg still has a recent handshake cached.
+    """
+    client = _original_client_view(row, connection_statuses, traffic_usage)
+    if client.get("disabled_at"):
+        client["is_online"] = False
+        client["last_seen_text"] = "отключен"
+        client["connected_interface"] = ""
+    return client
+
+
+web_routes._client_view = _client_view_disabled_clients_offline
 
 app = FastAPI(
     title="AmneziaWG Admin Panel MVP",
