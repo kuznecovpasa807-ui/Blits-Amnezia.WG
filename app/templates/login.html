@@ -1,0 +1,46 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход в панель управления | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="login-container" data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="login-card">
+        <div class="login-header">
+            <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+            <h2>Blitz Panel</h2>
+            <p>Панель управления VPN ключами</p>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-danger" style="margin-bottom: 0;">
+            <span><i class="fa-solid fa-triangle-exclamation"></i> {{ error }}</span>
+        </div>
+        {% endif %}
+
+        <form action="/login" method="post" style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="username"><i class="fa-solid fa-user"></i> Имя пользователя</label>
+                <input type="text" id="username" name="username" class="form-control" placeholder="admin" required autofocus>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="password"><i class="fa-solid fa-lock"></i> Пароль</label>
+                <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
+                Войти <i class="fa-solid fa-right-to-bracket"></i>
+            </button>
+        </form>
+    </div>
+<script src="/static/i18n.js"></script>
+</body>
+</html>
+
+
+

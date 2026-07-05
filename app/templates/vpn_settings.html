@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройки VPN | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}">
+                    <a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Дашборд</a>
+                </li>
+                <li class="menu-item {% if current_page == 'clients' %}active{% endif %}">
+                    <a href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a>
+                </li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}">
+                    <a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a>
+                </li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}">
+                    <a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a>
+                </li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}">
+                    <a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a>
+                </li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}">
+                    <a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a>
+                </li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}">
+                    <a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a>
+                </li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}">
+                    <a href="/settings/api"><i class="fa-solid fa-code"></i> API</a>
+                </li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}">
+                    <a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a>
+                </li>
+                <li class="menu-item" style="margin-top: auto;">
+                    <a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="user-avatar">A</div>
+                <div class="user-info">
+                    <span class="user-name">Администратор</span>
+                    <span class="user-role">Главный admin</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">Параметры AmneziaWG</h1>
+                <div class="header-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="checkVpnConfig()"><i class="fa-solid fa-list-check"></i> Проверить конфиг</button>
+                </div>
+            </header>
+
+            <div class="content-body">
+                {% if success %}
+                <div class="alert alert-success">
+                    <span><i class="fa-solid fa-circle-check"></i> <strong>Готово.</strong> Настройки сохранены, конфигурация AmneziaWG обновлена.</span>
+                </div>
+                {% endif %}
+
+                {% if error %}
+                <div class="alert alert-danger">
+                    <span><i class="fa-solid fa-triangle-exclamation"></i> <strong>Ошибка:</strong> {{ error }}</span>
+                </div>
+                {% endif %}
+
+                <div id="vpn-check-result" class="content-card" style="display: none; max-width: 920px;">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-list-check"></i> Результат проверки</h2>
+                    </div>
+                    <div id="vpn-check-body" class="card-body" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                </div>
+
+                <form action="/settings/vpn" method="post" class="content-card" style="max-width: 920px;">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-sliders"></i> Редактировать конфигурацию подключения</h2>
+                    </div>
+                    <div class="card-body" style="display: flex; flex-direction: column; gap: 24px;">
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--primary);">
+                                <i class="fa-solid fa-network-wired"></i> Сетевые настройки
+                            </h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="public_ip">Внешний IP сервера (Endpoint)</label>
+                                    <input type="text" id="public_ip" name="public_ip" class="form-control" value="{{ settings.public_ip }}" required placeholder="например, 1.2.3.4">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="port">UDP-порт Amnezia 2.0</label>
+                                    <input type="number" id="port" name="port" class="form-control" value="{{ settings.port }}" required min="1" max="65535">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="legacy_port">UDP-порт Legacy</label>
+                                    <input type="number" id="legacy_port" name="legacy_port" class="form-control" value="{{ settings.legacy_port }}" required min="1" max="65535">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="dns">DNS для клиентов</label>
+                                    <input type="text" id="dns" name="dns" class="form-control" value="{{ settings.dns }}" required placeholder="1.1.1.1, 1.0.0.1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style="border: none; border-top: 1px solid var(--border-color);">
+
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 4px; color: var(--primary);">
+                                <i class="fa-solid fa-user-secret"></i> Маскировка AmneziaWG
+                            </h3>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+                                Эти параметры должны совпадать на сервере и в ключах клиентов.
+                            </p>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="generateStealthProfile()">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Сгенерировать профиль
+                                </button>
+                                <span id="stealth-profile-status" class="client-subtext" style="align-self:center;"></span>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 16px;">
+                                <div style="padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-main);">
+                                    <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--dark);">Amnezia 2.0</h4>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="jc">Jc</label>
+                                        <input type="number" id="jc" name="jc" class="form-control" value="{{ settings.jc }}" required min="0" max="100">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="jmin">Jmin</label>
+                                        <input type="number" id="jmin" name="jmin" class="form-control" value="{{ settings.jmin }}" required min="0" max="1200">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="jmax">Jmax</label>
+                                        <input type="number" id="jmax" name="jmax" class="form-control" value="{{ settings.jmax }}" required min="0" max="1200">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="s1">S1</label>
+                                        <input type="number" id="s1" name="s1" class="form-control" value="{{ settings.s1 }}" required min="0" max="1000">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="s2">S2</label>
+                                        <input type="number" id="s2" name="s2" class="form-control" value="{{ settings.s2 }}" required min="0" max="1000">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="s3">S3</label>
+                                        <input type="number" id="s3" name="s3" class="form-control" value="{{ settings.s3 }}" required min="0" max="1000">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="s4">S4</label>
+                                        <input type="number" id="s4" name="s4" class="form-control" value="{{ settings.s4 }}" required min="0" max="1000">
+                                    </div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="h1">H1</label>
+                                        <input type="text" id="h1" name="h1" class="form-control" value="{{ settings.h1 }}" required>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="h2">H2</label>
+                                        <input type="text" id="h2" name="h2" class="form-control" value="{{ settings.h2 }}" required>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="h3">H3</label>
+                                        <input type="text" id="h3" name="h3" class="form-control" value="{{ settings.h3 }}" required>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label for="h4">H4</label>
+                                        <input type="text" id="h4" name="h4" class="form-control" value="{{ settings.h4 }}" required>
+                                    </div>
+                                </div>
+                                </div>
+                                <div style="padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-main);">
+                                    <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--dark);">Amnezia 1 / Legacy</h4>
+                                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                                        Legacy использует свои значения маскировки. S3/S4 здесь не показываются, потому что конфиг Amnezia 1 не должен их содержать.
+                                    </p>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px;">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_jc">Jc</label>
+                                            <input type="number" id="legacy_jc" name="legacy_jc" class="form-control" value="{{ settings.legacy_jc }}" required min="0" max="100">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_jmin">Jmin</label>
+                                            <input type="number" id="legacy_jmin" name="legacy_jmin" class="form-control" value="{{ settings.legacy_jmin }}" required min="0" max="1200">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_jmax">Jmax</label>
+                                            <input type="number" id="legacy_jmax" name="legacy_jmax" class="form-control" value="{{ settings.legacy_jmax }}" required min="0" max="1200">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_s1">S1</label>
+                                            <input type="number" id="legacy_s1" name="legacy_s1" class="form-control" value="{{ settings.legacy_s1 }}" required min="0" max="1000">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_s2">S2</label>
+                                            <input type="number" id="legacy_s2" name="legacy_s2" class="form-control" value="{{ settings.legacy_s2 }}" required min="0" max="1000">
+                                        </div>
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px;">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_h1">H1</label>
+                                            <input type="text" id="legacy_h1" name="legacy_h1" class="form-control" value="{{ settings.legacy_h1 }}" required>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_h2">H2</label>
+                                            <input type="text" id="legacy_h2" name="legacy_h2" class="form-control" value="{{ settings.legacy_h2 }}" required>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_h3">H3</label>
+                                            <input type="text" id="legacy_h3" name="legacy_h3" class="form-control" value="{{ settings.legacy_h3 }}" required>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="legacy_h4">H4</label>
+                                            <input type="text" id="legacy_h4" name="legacy_h4" class="form-control" value="{{ settings.legacy_h4 }}" required>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr style="border: none; border-top: 1px solid var(--border-color);">
+
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 4px; color: var(--primary);">
+                                <i class="fa-solid fa-route"></i> Раздельное туннелирование
+                            </h3>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                                Все строки из этого списка пойдут через VPN в split-ключах. Можно писать CIDR, одиночные IP или домены. Домены сервер преобразует в IP при генерации ключа. Сейчас получается маршрутов: {{ settings.split_tunnel_route_count }}.
+                            </p>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                                {% for preset_name, preset_items in split_presets.items() %}
+                                <button type="button" class="btn btn-secondary btn-sm" onclick='addSplitPreset({{ preset_items | tojson }})'>
+                                    <i class="fa-solid fa-plus"></i> {{ preset_name }}
+                                </button>
+                                {% endfor %}
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="split_tunnel_routes">Список маршрутов и доменов</label>
+                                <textarea id="split_tunnel_routes" name="split_tunnel_routes" class="form-control" rows="14" spellcheck="false" style="font-family: 'Courier New', monospace;">{{ settings.split_tunnel_routes }}</textarea>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 12px; margin-top: 12px;">
+                            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Сохранить и применить</button>
+                            <a href="/dashboard" class="btn btn-secondary">Отмена</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+<script>
+    function addSplitPreset(items) {
+        const textarea = document.getElementById('split_tunnel_routes');
+        const current = textarea.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+        items.forEach((item) => {
+            if (!current.includes(item)) current.push(item);
+        });
+        textarea.value = current.join('\n');
+        textarea.focus();
+    }
+
+    async function generateStealthProfile() {
+        const status = document.getElementById('stealth-profile-status');
+        status.textContent = 'Генерация...';
+        try {
+            const response = await fetch('/settings/vpn/generate-stealth', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+            if (!response.ok) throw new Error('bad response');
+            const data = await response.json();
+            Object.entries(data.v2 || {}).forEach(([key, value]) => {
+                const input = document.getElementById(key);
+                if (input) input.value = value;
+            });
+            Object.entries(data.legacy || {}).forEach(([key, value]) => {
+                const input = document.getElementById('legacy_' + key);
+                if (input) input.value = value;
+            });
+            status.textContent = 'Профиль подставлен. Нажми сохранить, чтобы применить.';
+        } catch (error) {
+            status.textContent = 'Не удалось сгенерировать профиль.';
+        }
+    }
+
+    async function checkVpnConfig() {
+        const t = window.panelT || ((text) => text);
+        const panel = document.getElementById('vpn-check-result');
+        const body = document.getElementById('vpn-check-body');
+        panel.style.display = 'block';
+        body.innerHTML = '<span class="client-subtext">' + t('Проверка...') + '</span>';
+        try {
+            const response = await fetch('/settings/vpn/check', { credentials: 'same-origin' });
+            const data = await response.json();
+            body.innerHTML = data.checks.map((item) => `
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-main);">
+                    <div>
+                        <div style="font-weight:700;color:var(--dark);">${item.name}</div>
+                        <div class="client-subtext">${item.message}</div>
+                    </div>
+                    <span class="badge ${item.ok ? 'badge-success' : 'badge-danger'}">${item.ok ? 'OK' : t('Ошибка')}</span>
+                </div>
+            `).join('');
+        } catch (error) {
+            body.innerHTML = '<span class="badge badge-danger">' + t('Не удалось выполнить проверку') + '</span>';
+        }
+    }
+
+    {% if success %}
+    setTimeout(checkVpnConfig, 300);
+    {% endif %}
+</script>
+<script src="/static/i18n.js"></script>
+</body>
+</html>
+
+

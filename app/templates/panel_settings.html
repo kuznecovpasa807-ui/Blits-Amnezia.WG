@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройки панели | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body data-theme="{{ settings.panel_theme }}">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}">
+                    <a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Дашборд</a>
+                </li>
+                <li class="menu-item {% if current_page == 'clients' %}active{% endif %}">
+                    <a href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a>
+                </li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}">
+                    <a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a>
+                </li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}">
+                    <a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a>
+                </li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}">
+                    <a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a>
+                </li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}">
+                    <a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a>
+                </li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}">
+                    <a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a>
+                </li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}">
+                    <a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a>
+                </li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}">
+                    <a href="/settings/api"><i class="fa-solid fa-code"></i> API</a>
+                </li>
+                <li class="menu-item" style="margin-top: auto;">
+                    <a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="user-avatar">A</div>
+                <div class="user-info">
+                    <span class="user-name">Администратор</span>
+                    <span class="user-role">Главный admin</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">Настройки панели</h1>
+            </header>
+
+            <div class="content-body">
+                {% if success %}
+                <div class="alert alert-success">
+                    <span><i class="fa-solid fa-circle-check"></i> <strong>Готово.</strong> {{ success }}</span>
+                </div>
+                {% endif %}
+
+                {% if error %}
+                <div class="alert alert-danger">
+                    <span><i class="fa-solid fa-triangle-exclamation"></i> <strong>Ошибка:</strong> {{ error }}</span>
+                </div>
+                {% endif %}
+
+                <form action="/settings/panel" method="post" class="content-card" style="max-width: 760px;">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-window-maximize"></i> Доступ к веб-панели</h2>
+                    </div>
+                    <div class="card-body" style="display: flex; flex-direction: column; gap: 22px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="panel_port">Порт панели <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(только чтение)</span></label>
+                                <input type="number" id="panel_port" class="form-control" value="{{ settings.panel_port }}" readonly style="background: var(--bg-secondary); cursor: not-allowed; opacity: 0.8;">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="panel_domain">Домен панели <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(только чтение)</span></label>
+                                <input type="text" id="panel_domain" class="form-control" value="{{ settings.panel_domain }}" readonly style="background: var(--bg-secondary); cursor: not-allowed; opacity: 0.8;" placeholder="не привязан">
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Тема панели</label>
+                            <div class="theme-toggle">
+                                <label class="theme-option {% if settings.panel_theme != 'dark' %}active{% endif %}">
+                                    <input type="radio" name="panel_theme" value="light" data-theme-choice {% if settings.panel_theme != 'dark' %}checked{% endif %}>
+                                    <i class="fa-solid fa-sun"></i>
+                                    <span>Светлая</span>
+                                </label>
+                                <label class="theme-option {% if settings.panel_theme == 'dark' %}active{% endif %}">
+                                    <input type="radio" name="panel_theme" value="dark" data-theme-choice {% if settings.panel_theme == 'dark' %}checked{% endif %}>
+                                    <i class="fa-solid fa-moon"></i>
+                                    <span>Тёмная</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="panel_language">Язык панели</label>
+                            <select id="panel_language" name="panel_language" class="form-control">
+                                <option value="ru" {% if settings.panel_language != 'en' %}selected{% endif %}>Русский</option>
+                                <option value="en" {% if settings.panel_language == 'en' %}selected{% endif %}>English</option>
+                            </select>
+                        </div>
+
+                        <div style="padding-top: 8px; border-top: 1px solid var(--border-color);">
+                            <h3 class="card-title" style="margin-bottom: 14px;"><i class="fa-brands fa-telegram"></i> Уведомления админу</h3>
+                            <label style="display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px;">
+                                <input type="checkbox" name="telegram_notifications_enabled" value="1" {% if settings.telegram_notifications_enabled == '1' %}checked{% endif %}>
+                                <span>Отправлять события в Telegram</span>
+                            </label>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="telegram_admin_bot_token">Токен бота</label>
+                                    <input type="password" id="telegram_admin_bot_token" name="telegram_admin_bot_token" class="form-control" value="{{ settings.telegram_admin_bot_token }}" placeholder="123456:ABC...">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="telegram_admin_chat_id">Chat ID администратора</label>
+                                    <input type="text" id="telegram_admin_chat_id" name="telegram_admin_chat_id" class="form-control" value="{{ settings.telegram_admin_chat_id }}" placeholder="123456789">
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Сохранить Telegram</button>
+                            </div>
+                        </div>
+
+                        <div style="padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary);">
+                            <div style="font-size: 13px; color: var(--text-muted); line-height: 1.7;">
+                                Сейчас панель доступна по адресу:
+                                <strong style="color: var(--text-primary);">http://{{ settings.public_ip }}:{{ settings.panel_port }}</strong>
+                                {% if settings.panel_domain %}
+                                <br>После настройки DNS и прокси домен можно будет использовать как
+                                <strong style="color: var(--text-primary);">{{ settings.panel_domain }}</strong>.
+                                {% endif %}
+                                <div style="margin-top: 8px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border-color); padding-top: 8px;">
+                                    <i class="fa-solid fa-circle-info"></i> Изменение порта и домена производится через консольное меню на сервере: <code>./blits</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 12px;">
+                            <a href="/backup/download" class="btn btn-secondary"><i class="fa-solid fa-file-zipper"></i> Скачать бэкап</a>
+                            <a href="/dashboard" class="btn btn-secondary">Отмена</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+    <script>
+        document.querySelectorAll('[data-theme-choice]').forEach((input) => {
+            input.addEventListener('change', async () => {
+                if (!input.checked) return;
+                const theme = input.value;
+                document.body.dataset.theme = theme;
+                document.querySelectorAll('.theme-option').forEach((option) => option.classList.remove('active'));
+                input.closest('.theme-option').classList.add('active');
+                document.cookie = `panel_theme=${theme}; path=/; max-age=31536000; samesite=lax`;
+
+                const formData = new FormData();
+                formData.append('panel_theme', theme);
+                try {
+                    await fetch('/settings/panel/theme', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    });
+                } catch (error) {
+                    console.warn('Theme save failed', error);
+                }
+            });
+        });
+
+        const languageSelect = document.getElementById('panel_language');
+        if (languageSelect) {
+            languageSelect.addEventListener('change', async () => {
+                const language = languageSelect.value;
+                document.cookie = `panel_lang=${language}; path=/; max-age=31536000; samesite=lax`;
+
+                const formData = new FormData();
+                formData.append('panel_language', language);
+                try {
+                    await fetch('/settings/panel/language', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    });
+                } catch (error) {
+                    console.warn('Language save failed', error);
+                }
+                window.location.reload();
+            });
+        }
+    </script>
+<script src="/static/i18n.js"></script>
+</body>
+</html>
+
+

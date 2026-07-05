@@ -1,0 +1,375 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Документация | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .code-block {
+            background-color: #1e293b;
+            color: #f8fafc;
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Courier New', Courier, monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: pre;
+            margin: 12px 0 20px 0;
+            border: 1px solid #334155;
+            position: relative;
+        }
+        .code-copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .code-copy-btn:hover {
+            background-color: var(--primary);
+            color: white;
+        }
+        .method-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 11px;
+            color: white;
+            text-transform: uppercase;
+            min-width: 60px;
+            text-align: center;
+        }
+        .method-post { background-color: #10b981; }
+        .method-get { background-color: #3b82f6; }
+        .method-delete { background-color: #ef4444; }
+        
+        .api-route-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 24px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .api-route-path {
+            font-family: monospace;
+            font-weight: 700;
+            font-size: 15px;
+            color: var(--dark);
+        }
+    </style>
+</head>
+<body data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}">
+                    <a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
+                </li>
+                <li class="menu-item {% if current_page == 'clients' %}active{% endif %}">
+                    <a href="/clients"><i class="fa-solid fa-users"></i> Список клиентов</a>
+                </li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}">
+                    <a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a>
+                </li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}">
+                    <a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a>
+                </li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}">
+                    <a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a>
+                </li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}">
+                    <a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a>
+                </li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}">
+                    <a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a>
+                </li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}">
+                    <a href="/settings/api"><i class="fa-solid fa-code"></i> API Документация</a>
+                </li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}">
+                    <a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a>
+                </li>
+                <li class="menu-item" style="margin-top: auto;">
+                    <a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="user-avatar">A</div>
+                <div class="user-info">
+                    <span class="user-name">Администратор</span>
+                    <span class="user-role">Главный Admin</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">Интеграция с Telegram-ботом</h1>
+            </header>
+
+            <div class="content-body">
+                <div class="content-card" style="max-width: 900px;">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-code"></i> Документация API для Telegram-бота</h2>
+                    </div>
+                    <div class="card-body">
+                        <div style="background-color: var(--primary-light); border: 1px solid rgba(74, 108, 247, 0.18); border-radius: 8px; padding: 16px; margin-bottom: 24px; color: var(--text-main);">
+                            <strong style="display: block; margin-bottom: 6px;">Зачем нужен этот раздел</strong>
+                            <span style="font-size: 13px; color: var(--text-muted); line-height: 1.7;">
+                                API нужно для автоматизации продаж и поддержки: Telegram-бот или внешний сайт может создавать VPN-клиентов после оплаты, продлевать срок действия, отключать доступ, удалять ключи и получать готовые ссылки/QR без ручного входа в панель.
+                            </span>
+                        </div>
+                        
+                        <!-- Раздел 1. Способы авторизации -->
+                        <h3 style="font-size: 16px; font-weight: 700; color: var(--primary); margin-bottom: 8px;"><i class="fa-solid fa-key"></i> 1. Способы авторизации запросов</h3>
+                        <p style="font-size: 14px; margin-bottom: 12px;">Панель поддерживает два полностью защищенных механизма авторизации для Telegram-бота:</p>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
+                            <div style="background-color: var(--gray-light); padding: 16px; border-radius: 8px; border-left: 4px solid var(--primary);">
+                                <strong style="font-size: 14px; display: block; margin-bottom: 4px;">Вариант А: Статический API-токен (Рекомендуется)</strong>
+                                <span style="font-size: 13px;">Передавайте этот токен в заголовках HTTP в формате Bearer:</span>
+                                <code style="display: block; font-family: monospace; padding: 8px; background-color: white; border: 1px solid var(--border-color); border-radius: 4px; margin-top: 8px; font-size: 12px; font-weight: 700; color: #0f172a; word-break: break-all;">Authorization: Bearer {{ telegram_token }}</code>
+                            </div>
+                            
+                            <div style="background-color: var(--gray-light); padding: 16px; border-radius: 8px; border-left: 4px solid var(--success);">
+                                <strong style="font-size: 14px; display: block; margin-bottom: 4px;">Вариант Б: Авторизация по логину и паролю панели</strong>
+                                <span style="font-size: 13px;">Бот делает запрос `POST /api/v1/auth/token`, передавая логин и пароль администратора, и получает временный JWT токен, который используется для последующих запросов. Это избавляет от необходимости жестко прописывать токены.</span>
+                            </div>
+                        </div>
+
+                        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 24px 0;">
+
+                        <!-- Раздел 2. Эндпоинты -->
+                        <h3 style="font-size: 16px; font-weight: 700; color: var(--primary); margin-bottom: 16px;"><i class="fa-solid fa-cloud-bolt"></i> 2. Эндпоинты API</h3>
+
+                        <!-- 2.1 POST /api/v1/auth/token -->
+                        <div class="api-route-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="api-route-path">/api/v1/auth/token</span>
+                        </div>
+                        <p style="font-size: 13px; margin-top: 8px; color: var(--text-muted);">Авторизация бота по логину и паролю панели.</p>
+                        <div class="code-block" id="code-auth">
+<button class="code-copy-btn" onclick="copyCode('code-auth')"><i class="fa-regular fa-copy"></i> Копировать</button># Пример POST-запроса на получение токена:
+curl -X POST "http://{{ public_ip }}:{{ panel_port }}/api/v1/auth/token" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "admin", "password": "your_password"}'
+
+# Ответ сервера при успехе:
+# {
+#   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+#   "token_type": "bearer"
+# }</div>
+
+                        <!-- 2.2 POST /api/v1/clients -->
+                        <div class="api-route-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="api-route-path">/api/v1/clients</span>
+                        </div>
+                        <p style="font-size: 13px; margin-top: 8px; color: var(--text-muted);">Создать нового пира (клиента) AmneziaWG. Возвращает готовые конфиги и обе версии ссылок импорта.</p>
+                        <div class="code-block" id="code-create">
+<button class="code-copy-btn" onclick="copyCode('code-create')"><i class="fa-regular fa-copy"></i> Копировать</button># Запрос на создание клиента (на 30 дней, без лимита трафика):
+curl -X POST "http://{{ public_ip }}:{{ panel_port }}/api/v1/clients" \
+     -H "Authorization: Bearer {{ telegram_token }}" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "tg_user_12345", "telegram_id": 12345, "days": 30, "traffic_limit_gb": 0.0}'
+
+# Ответ сервера при успехе (возвращает данные и ссылки):
+# {
+#   "client_id": "a4d3391b-b4be-4161-825f-...",
+#   "name": "tg_user_12345",
+#   "telegram_id": 12345,
+#   "ip_address": "10.66.66.5",
+#   "config_text": "[Interface]\nPrivateKey = ...",
+#   "conf_download_url": "/clients/a4d3391b-b4be-4161-825f-.../download",
+#   "qr_url": "/clients/a4d3391b-b4be-4161-825f-.../qr",
+#   "qr_url_v2": "/clients/a4d3391b-b4be-4161-825f-.../qr?version=2.0",
+#   "qr_url_split": "/clients/a4d3391b-b4be-4161-825f-.../qr?split=true",
+#   "qr_url_split_v2": "/clients/a4d3391b-b4be-4161-825f-.../qr?split=true&version=2.0",
+#   "qr_series_url": "/clients/a4d3391b-b4be-4161-825f-.../qr-series",
+#   "qr_series_url_v2": "/clients/a4d3391b-b4be-4161-825f-.../qr-series?version=2.0",
+#   "deep_link": "vpn://...",       <-- Amnezia Legacy 1.0 (для старых версий)
+#   "deep_link_v2": "vpn://..."    <-- Amnezia 2.0 (для новых версий 4.8.x+)
+# }</div>
+
+                        <!-- 2.3 POST /api/v1/clients/{id}/extend -->
+                        <div class="api-route-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="api-route-path">/api/v1/clients/{client_id}/extend</span>
+                        </div>
+                        <p style="font-size: 13px; margin-top: 8px; color: var(--text-muted);">Продлить VPN-ключ на указанное число дней (например, после очередной оплаты в боте).</p>
+                        <div class="code-block" id="code-extend">
+<button class="code-copy-btn" onclick="copyCode('code-extend')"><i class="fa-regular fa-copy"></i> Копировать</button>curl -X POST "http://{{ public_ip }}:{{ panel_port }}/api/v1/clients/YOUR_CLIENT_UUID/extend" \
+     -H "Authorization: Bearer {{ telegram_token }}" \
+     -H "Content-Type: application/json" \
+     -d '{"days": 30}'</div>
+
+                        <!-- 2.4 POST /api/v1/clients/{id}/disable -->
+                        <div class="api-route-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="api-route-path">/api/v1/clients/{client_id}/disable</span>
+                        </div>
+                        <p style="font-size: 13px; margin-top: 8px; color: var(--text-muted);">Заблокировать клиента (например, за неуплату). Peer моментально удаляется из активного конфига сервера.</p>
+                        <div class="code-block" id="code-disable">
+<button class="code-copy-btn" onclick="copyCode('code-disable')"><i class="fa-regular fa-copy"></i> Копировать</button>curl -X POST "http://{{ public_ip }}:{{ panel_port }}/api/v1/clients/YOUR_CLIENT_UUID/disable" \
+     -H "Authorization: Bearer {{ telegram_token }}"</div>
+
+                        <!-- 2.5 POST /api/v1/clients/{id}/enable -->
+                        <div class="api-route-header">
+                            <span class="method-badge method-post">POST</span>
+                            <span class="api-route-path">/api/v1/clients/{client_id}/enable</span>
+                        </div>
+                        <p style="font-size: 13px; margin-top: 8px; color: var(--text-muted);">Разблокировать ранее отключенного клиента.</p>
+                        <div class="code-block" id="code-enable">
+<button class="code-copy-btn" onclick="copyCode('code-enable')"><i class="fa-regular fa-copy"></i> Копировать</button>curl -X POST "http://{{ public_ip }}:{{ panel_port }}/api/v1/clients/YOUR_CLIENT_UUID/enable" \
+     -H "Authorization: Bearer {{ telegram_token }}"</div>
+
+                        <!-- 2.6 DELETE /api/v1/clients/{id} -->
+                        <div class="api-route-header">
+                            <span class="method-badge method-delete">DELETE</span>
+                            <span class="api-route-path">/api/v1/clients/{client_id}</span>
+                        </div>
+                        <p style="font-size: 13px; margin-top: 8px; color: var(--text-muted);">Мягко удалить клиента из системы.</p>
+                        <div class="code-block" id="code-delete">
+<button class="code-copy-btn" onclick="copyCode('code-delete')"><i class="fa-regular fa-copy"></i> Копировать</button>curl -X DELETE "http://{{ public_ip }}:{{ panel_port }}/api/v1/clients/YOUR_CLIENT_UUID" \
+     -H "Authorization: Bearer {{ telegram_token }}"</div>
+
+                        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 24px 0;">
+
+                        <!-- Раздел 3. Готовый Python-код для бота -->
+                        <h3 style="font-size: 16px; font-weight: 700; color: var(--primary); margin-bottom: 8px;"><i class="fa-brands fa-python"></i> 3. Пример интеграции бота (aiogram 3.x)</h3>
+                        <p style="font-size: 13px; margin-bottom: 12px; color: var(--text-muted);">Вы можете прямо скопировать этот класс API-клиента для интеграции в код своего Telegram-бота на Python:</p>
+                        
+                        <div class="code-block" id="code-python-client" style="max-height: 400px;">
+<button class="code-copy-btn" onclick="copyCode('code-python-client')"><i class="fa-regular fa-copy"></i> Копировать</button>import aiohttp
+import logging
+
+class AmneziaPanelAPI:
+    def __init__(self, base_url: str = "http://{{ public_ip }}:{{ panel_port }}", username: str = "admin", password: str = "your_password"):
+        self.base_url = base_url
+        self.username = username
+        self.password = password
+        self.token = None
+
+    async def _get_headers(self):
+        if not self.token:
+            await self.login()
+        return {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json"
+        }
+
+    async def login(self):
+        url = f"{self.base_url}/api/v1/auth/token"
+        payload = {"username": self.username, "password": self.password}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.token = data["access_token"]
+                    logging.info("Успешная авторизация в AmneziaWG API!")
+                else:
+                    raise Exception(f"Ошибка авторизации API: {resp.status}")
+
+    async def create_client(self, name: str, telegram_id: int, days: int = 30):
+        url = f"{self.base_url}/api/v1/clients"
+        payload = {
+            "name": name,
+            "telegram_id": telegram_id,
+            "days": days,
+            "traffic_limit_gb": 0.0
+        }
+        headers = await self._get_headers()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                elif resp.status == 401:
+                    self.token = None  # Сбросим токен для ре-логина при следующем запросе
+                    return await self.create_client(name, telegram_id, days)
+                else:
+                    logging.error(f"Не удалось создать пира: {await resp.text()}")
+                    return None
+
+# Пример вызова в обработчике оплаты Telegram-бота:
+# api = AmneziaPanelAPI(username="admin", password="password")
+# client = await api.create_client(name=f"user_{message.from_user.id}", telegram_id=message.from_user.id)
+# if client:
+#     await message.answer(
+#         f"Оплата принята! Ваш ключ AmneziaWG:\n\n"
+#         f"<b>Для Amnezia 2.0 (нажмите для импорта):</b>\n{client['deep_link_v2']}\n\n"
+#         f"<b>Для Amnezia Legacy (старые версии):</b>\n{client['deep_link']}"
+#     )</div>
+
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function copyTextToClipboard(text, successMessage) {
+            if (!text) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() {
+                    alert(successMessage);
+                }, function(err) {
+                    fallbackCopyTextToClipboard(text, successMessage);
+                });
+            } else {
+                fallbackCopyTextToClipboard(text, successMessage);
+            }
+        }
+
+        function fallbackCopyTextToClipboard(text, successMessage) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    alert(successMessage);
+                } else {
+                    alert('Не удалось скопировать. Пожалуйста, выделите и скопируйте вручную.');
+                }
+            } catch (err) {
+                console.error('Ошибка fallback копирования', err);
+                alert('Не удалось скопировать. Пожалуйста, выделите и скопируйте вручную.');
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function copyCode(elementId) {
+            const block = document.getElementById(elementId);
+            // Удаляем кнопку копирования из текста копирования
+            const textToCopy = block.innerText.replace('Копировать', '').trim();
+            copyTextToClipboard(textToCopy, 'Код успешно скопирован в буфер обмена!');
+        }
+    </script>
+<script src="/static/i18n.js"></script>
+</body>
+</html>
+
+

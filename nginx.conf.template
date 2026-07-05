@@ -1,0 +1,72 @@
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+                    
+    access_log /var/log/nginx/access.log main;
+    sendfile on;
+    keepalive_timeout 65;
+
+    # 1. Перенаправление с HTTP (порт 80) на HTTPS
+    server {
+        listen 80;
+        listen [::]:80;
+        server_name __DOMAIN__;
+
+        # Проверка Certbot для автоматического продления сертификатов
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    # 2. Сервер HTTPS (порт 443) с проксированием в панель
+    server {
+        listen 443 ssl;
+        listen [::]:443 ssl;
+        server_name __DOMAIN__;
+
+        # Пути к сертификатам Let's Encrypt (будут смонтированы в контейнер)
+        ssl_certificate /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+
+        # Безопасные настройки SSL
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers on;
+        
+        # Настройки таймаутов прокси для стабильных SSE событий (live logs)
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+
+        location / {
+            proxy_pass http://127.0.0.1:__PORT__;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Поддержка WebSockets и EventSource (Server-Sent Events)
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_buffering off;
+            proxy_cache off;
+        }
+    }
+}

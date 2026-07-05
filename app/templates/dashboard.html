@@ -1,0 +1,645 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дашборд | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .content-body { padding: 20px; }
+        .x-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+        .x-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .x-card-header {
+            min-height: 70px;
+            padding: 20px 28px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .x-card-title {
+            color: var(--dark);
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .x-card-body { padding: 28px; }
+        .meter-row {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 22px;
+            padding: 30px 26px;
+        }
+        .meter-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            min-width: 0;
+        }
+        .meter {
+            --value: 0;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: conic-gradient(var(--primary) calc(var(--value) * 1%), var(--border-color) 0);
+            display: grid;
+            place-items: center;
+            position: relative;
+        }
+        .meter::before {
+            content: "";
+            width: 122px;
+            height: 122px;
+            border-radius: 50%;
+            background: var(--card-bg);
+            position: absolute;
+        }
+        .meter-value {
+            position: relative;
+            color: var(--dark);
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 2px;
+            line-height: 1;
+            text-align: center;
+        }
+        .meter-value small {
+            font-size: 16px;
+            font-weight: 800;
+        }
+        .meter-label {
+            color: var(--text-main);
+            font-size: 16px;
+            text-align: center;
+            line-height: 1.45;
+        }
+        .meter-label strong { font-weight: 800; }
+        .x-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            border-top: 1px solid transparent;
+        }
+        .x-action {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            border-left: 1px solid var(--border-color);
+            font-weight: 600;
+        }
+        .x-action:first-child { border-left: 0; }
+        .x-action:hover { color: var(--primary); background: var(--gray-light); }
+        .pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .x-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            background: var(--success-light);
+            color: var(--success);
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .x-pill.orange {
+            border-color: rgba(245, 158, 11, 0.35);
+            background: rgba(245, 158, 11, 0.12);
+            color: var(--warning);
+        }
+        .service-state {
+            color: var(--text-main);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .service-state::before {
+            content: "";
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 18px rgba(16, 185, 129, 0.45);
+        }
+        .service-state.down::before { background: #ef4444; box-shadow: none; }
+        .stat-pair {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 28px;
+        }
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 15px;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            color: var(--text-main);
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .mono {
+            font-family: "Courier New", monospace;
+            color: var(--primary);
+            word-break: break-all;
+        }
+        .masked-ip {
+            display: inline-block;
+            filter: blur(7px);
+            user-select: none;
+            cursor: pointer;
+            transition: filter 0.18s ease;
+        }
+        .masked-ip.revealed,
+        .masked-ip:focus {
+            filter: none;
+            user-select: text;
+            outline: none;
+        }
+        .load-digits {
+            letter-spacing: 3px;
+            font-weight: 800;
+            color: var(--success);
+        }
+        .mini-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .mini-table th,
+        .mini-table td {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+            font-size: 13px;
+        }
+        .mini-table th {
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+        .mini-table tr:last-child td {
+            border-bottom: 0;
+        }
+        .mini-table .right {
+            text-align: right;
+        }
+        .online-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .online-dot.active {
+            background: var(--success);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+        }
+        @media (max-width: 1100px) {
+            .meter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .x-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+            .content-body { padding: 12px; }
+            .meter-row { grid-template-columns: 1fr; }
+            .stat-pair, .x-actions { grid-template-columns: 1fr; }
+            .x-action { border-left: 0; border-top: 1px solid var(--border-color); }
+            .meter { width: 132px; height: 132px; }
+            .meter::before { width: 106px; height: 106px; }
+        }
+    </style>
+</head>
+<body data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}">
+                    <a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Дашборд</a>
+                </li>
+                <li class="menu-item {% if current_page == 'clients' %}active{% endif %}">
+                    <a href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a>
+                </li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}">
+                    <a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a>
+                </li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}">
+                    <a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a>
+                </li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}">
+                    <a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a>
+                </li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}">
+                    <a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a>
+                </li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}">
+                    <a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a>
+                </li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}">
+                    <a href="/settings/api"><i class="fa-solid fa-code"></i> API</a>
+                </li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}">
+                    <a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a>
+                </li>
+                <li class="menu-item" style="margin-top: auto;">
+                    <a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="user-avatar">A</div>
+                <div class="user-info">
+                    <span class="user-name">Администратор</span>
+                    <span class="user-role">Главный admin</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">Дашборд сервера</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="window.location.reload()"><i class="fa-solid fa-arrows-rotate"></i> Обновить</button>
+                </div>
+            </header>
+
+            <div class="content-body">
+                {% if user.must_change_password == 1 %}
+                <div class="alert alert-warning">
+                    <span><i class="fa-solid fa-triangle-exclamation"></i> <strong>Внимание.</strong> Используется стандартный пароль admin/admin.</span>
+                    <button class="alert-btn" onclick="window.location.href='/settings/password'">Сменить сейчас</button>
+                </div>
+                {% endif %}
+
+                <div class="x-grid">
+                    <section class="x-card meter-row">
+                        <div class="meter-card">
+                            <div class="meter" data-meter="stats.cpu.percent" style="--value: {{ stats.cpu.percent }}"><div class="meter-value"><span data-stat="stats.cpu.percent">{{ stats.cpu.percent }}</span><small>%</small></div></div>
+                            <div class="meter-label"><strong>ЦП:</strong> <span data-stat="stats.cpu.cores">{{ stats.cpu.cores }}</span> Core</div>
+                        </div>
+                        <div class="meter-card">
+                            <div class="meter" data-meter="stats.memory.percent" style="--value: {{ stats.memory.percent }}"><div class="meter-value"><span data-stat="stats.memory.percent">{{ stats.memory.percent }}</span><small>%</small></div></div>
+                            <div class="meter-label"><strong>ОЗУ:</strong> <span data-stat="stats.memory.used">{{ stats.memory.used }}</span> / <span data-stat="stats.memory.total">{{ stats.memory.total }}</span></div>
+                        </div>
+                        <div class="meter-card">
+                            <div class="meter" data-meter="stats.swap.percent" style="--value: {{ stats.swap.percent }}"><div class="meter-value"><span data-stat="stats.swap.percent">{{ stats.swap.percent }}</span><small>%</small></div></div>
+                            <div class="meter-label"><strong>Файл подкачки:</strong> <span data-stat="stats.swap.used">{{ stats.swap.used }}</span> / <span data-stat="stats.swap.total">{{ stats.swap.total }}</span></div>
+                        </div>
+                        <div class="meter-card">
+                            <div class="meter" data-meter="stats.disk.percent" style="--value: {{ stats.disk.percent }}"><div class="meter-value"><span data-stat="stats.disk.percent">{{ stats.disk.percent }}</span><small>%</small></div></div>
+                            <div class="meter-label"><strong>Диск:</strong> <span data-stat="stats.disk.used">{{ stats.disk.used }}</span> / <span data-stat="stats.disk.total">{{ stats.disk.total }}</span></div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">AmneziaWG</span>
+                            {% if awg_status == 'active' %}
+                            <span class="service-state">Запущен</span>
+                            {% else %}
+                            <span class="service-state down">Остановлен</span>
+                            {% endif %}
+                        </div>
+                        <div class="x-actions">
+                            <a class="x-action" href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a>
+                            <a class="x-action" href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Конфигурация</a>
+                            <a class="x-action" href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a>
+                            <a class="x-action" href="/clients?create=true"><i class="fa-solid fa-plus"></i> Новый ключ</a>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Панель</span>
+                        </div>
+                        <div class="x-card-body">
+                            <div class="pill-row">
+                                <span class="x-pill">Клиентов: <span data-stat="client_count">{{ client_count }}</span></span>
+                                <span class="x-pill">Активных: <span data-stat="active_count">{{ active_count }}</span></span>
+                                <span class="x-pill orange">Истек срок: <span data-stat="expired_count">{{ expired_count }}</span></span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Статус безопасности</span>
+                            <a class="btn btn-secondary btn-sm" href="/settings/panel"><i class="fa-solid fa-shield-halved"></i> Настройки</a>
+                        </div>
+                        <div class="x-card-body" style="display: flex; flex-direction: column; gap: 10px;">
+                            {% for check in security_checks %}
+                            <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+                                <div>
+                                    <strong>{{ check.name }}</strong>
+                                    <div class="client-subtext">{{ check.message }}</div>
+                                </div>
+                                <span class="badge {% if check.ok %}badge-success{% else %}badge-danger{% endif %}">{% if check.ok %}OK{% else %}Проверить{% endif %}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Обновление панели</span>
+                            <button class="btn btn-secondary btn-sm" onclick="runPanelUpdate()"><i class="fa-solid fa-cloud-arrow-down"></i> Обновить</button>
+                        </div>
+                        <div class="x-card-body">
+                            <div class="pill-row" style="margin-bottom: 12px;">
+                                <span class="x-pill">Версия: {{ panel_update.current }}</span>
+                                <span class="x-pill {% if panel_update.enabled %}green{% else %}orange{% endif %}">{% if panel_update.enabled %}Web update включен{% else %}Web update выключен{% endif %}</span>
+                            </div>
+                            <div class="client-subtext" style="margin-bottom: 8px;">Безопасный режим: если web update выключен, панель покажет команду для терминала.</div>
+                            <code id="panel-update-command" style="display:block;white-space:normal;word-break:break-word;background:var(--bg-main);border:1px solid var(--border-color);border-radius:8px;padding:10px;">{{ panel_update.command }}</code>
+                            <div id="panel-update-result" class="client-subtext" style="margin-top: 10px;"></div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Резервные копии</span>
+                        </div>
+                        <div class="x-card-body">
+                            {% if request.query_params.get('backup_restored') %}
+                            <div class="alert alert-success" style="margin-bottom: 16px;">
+                                <span><i class="fa-solid fa-circle-check"></i> Бэкап восстановлен. Конфигурация VPN пересобрана.</span>
+                            </div>
+                            {% endif %}
+                            {% if request.query_params.get('backup_error') %}
+                            <div class="alert alert-danger" style="margin-bottom: 16px;">
+                                <span><i class="fa-solid fa-triangle-exclamation"></i> Не удалось восстановить бэкап. Проверьте, что загружен архив Blitz Panel.</span>
+                            </div>
+                            {% endif %}
+                            <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                                <a class="btn btn-primary" href="/backup/download"><i class="fa-solid fa-download"></i> Скачать бэкап</a>
+                                <a class="btn btn-secondary" href="/backup/download/db"><i class="fa-solid fa-database"></i> Только база</a>
+                                <a class="btn btn-secondary" href="/backup/download/settings"><i class="fa-solid fa-sliders"></i> Только настройки</a>
+                                <form action="/backup/restore" method="post" enctype="multipart/form-data" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" onsubmit="return confirm('Восстановить панель из выбранного бэкапа? Текущая база будет сохранена аварийной копией.');">
+                                    <input type="file" name="backup_file" accept=".zip" class="form-control" style="max-width: 260px;" required>
+                                    <button class="btn btn-secondary" type="submit"><i class="fa-solid fa-upload"></i> Загрузить и восстановить</button>
+                                </form>
+                            </div>
+                            <div class="client-subtext" style="margin-top: 12px;">В архив входят база клиентов, настройки панели и конфиги VPN. Перед восстановлением текущая база сохраняется рядом как аварийная копия.</div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Состояние VPN-протоколов</span>
+                        </div>
+                        <div class="x-card-body">
+                            <div class="pill-row">
+                                <span class="x-pill">Amnezia 2.0: <span data-stat="stats.interfaces.v2_status">{{ stats.interfaces.v2_status }}</span></span>
+                                <span class="x-pill">Порт 2.0: <span data-stat="stats.interfaces.v2_port">{{ stats.interfaces.v2_port }}</span></span>
+                                <span class="x-pill">Legacy: <span data-stat="stats.interfaces.legacy_status">{{ stats.interfaces.legacy_status }}</span></span>
+                                <span class="x-pill">Порт Legacy: <span data-stat="stats.interfaces.legacy_port">{{ stats.interfaces.legacy_port }}</span></span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Топ клиентов по трафику</span>
+                            <a class="btn btn-secondary btn-sm" href="/clients"><i class="fa-solid fa-users"></i> Все клиенты</a>
+                        </div>
+                        <div class="x-card-body">
+                            <table class="mini-table">
+                                <thead>
+                                    <tr>
+                                        <th>Клиент</th>
+                                        <th class="right">Получено</th>
+                                        <th class="right">Отправлено</th>
+                                        <th class="right">Всего</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="top-clients-body">
+                                    {% for client in stats.top_clients %}
+                                    <tr>
+                                        <td><span class="online-dot {% if client.online %}active{% endif %}"></span>{{ client.name }}</td>
+                                        <td class="right">{{ client.rx }}</td>
+                                        <td class="right">{{ client.tx }}</td>
+                                        <td class="right"><strong>{{ client.total }}</strong></td>
+                                    </tr>
+                                    {% endfor %}
+                                    {% if not stats.top_clients %}
+                                    <tr><td colspan="4" style="color: var(--text-muted);">Пока нет трафика по клиентам</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Общий объем трафика</span>
+                        </div>
+                        <div class="x-card-body stat-pair">
+                            <div>
+                                <div class="stat-label">Отправлено peer-ами</div>
+                                <div class="stat-value"><i class="fa-solid fa-cloud-arrow-up"></i> <span data-stat="stats.traffic.sent">{{ stats.traffic.sent }}</span></div>
+                            </div>
+                            <div>
+                                <div class="stat-label">Получено peer-ами</div>
+                                <div class="stat-value"><i class="fa-solid fa-cloud-arrow-down"></i> <span data-stat="stats.traffic.received">{{ stats.traffic.received }}</span></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Скорость VPN-интерфейсов</span>
+                        </div>
+                        <div class="x-card-body stat-pair">
+                            <div>
+                                <div class="stat-label">Отправка</div>
+                                <div class="stat-value"><i class="fa-solid fa-arrow-up"></i> <span data-stat="stats.traffic.interface_sent_speed">{{ stats.traffic.interface_sent_speed }}</span></div>
+                            </div>
+                            <div>
+                                <div class="stat-label">Загрузка</div>
+                                <div class="stat-value"><i class="fa-solid fa-arrow-down"></i> <span data-stat="stats.traffic.interface_received_speed">{{ stats.traffic.interface_received_speed }}</span></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Объем на интерфейсах</span>
+                        </div>
+                        <div class="x-card-body stat-pair">
+                            <div>
+                                <div class="stat-label">Отправлено</div>
+                                <div class="stat-value"><i class="fa-solid fa-arrow-up"></i> <span data-stat="stats.traffic.interface_sent">{{ stats.traffic.interface_sent }}</span></div>
+                            </div>
+                            <div>
+                                <div class="stat-label">Получено</div>
+                                <div class="stat-value"><i class="fa-solid fa-arrow-down"></i> <span data-stat="stats.traffic.interface_received">{{ stats.traffic.interface_received }}</span></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">IP-адреса сервера</span>
+                            <i class="fa-solid fa-eye-slash" style="color: var(--text-muted);"></i>
+                        </div>
+                        <div class="x-card-body">
+                            <div class="stat-pair">
+                                <div>
+                                    <div class="stat-label">Публичный IP</div>
+                                    <div class="stat-value mono"><span class="masked-ip" tabindex="0" title="Нажмите, чтобы показать IP">{{ public_ip }}</span></div>
+                                </div>
+                                <div>
+                                    <div class="stat-label">VPN-интерфейсы</div>
+                                    <div class="stat-value mono">awg0 / awg_legacy</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="x-card">
+                        <div class="x-card-header">
+                            <span class="x-card-title">Клиенты и подключения</span>
+                        </div>
+                        <div class="x-card-body">
+                            <div class="pill-row">
+                                <span class="x-pill">Онлайн сейчас: <span data-stat="stats.connections.online">{{ stats.connections.online }}</span></span>
+                                <span class="x-pill">Peer-ов на сервере: <span data-stat="stats.connections.peers">{{ stats.connections.peers }}</span></span>
+                                <span class="x-pill">Активных ключей: <span data-stat="active_count">{{ active_count }}</span></span>
+                                <span class="x-pill orange">Просрочено: <span data-stat="expired_count">{{ expired_count }}</span></span>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script>
+        function readStat(obj, path) {
+            return path.split('.').reduce((value, key) => value && value[key], obj);
+        }
+
+        async function refreshDashboardStats() {
+            try {
+                const response = await fetch('/dashboard/stats', { cache: 'no-store' });
+                if (!response.ok) return;
+                const data = await response.json();
+
+                document.querySelectorAll('[data-stat]').forEach((el) => {
+                    const value = readStat(data, el.dataset.stat);
+                    if (value !== undefined && value !== null) {
+                        el.textContent = value;
+                    }
+                });
+
+                document.querySelectorAll('[data-meter]').forEach((el) => {
+                    const value = Number(readStat(data, el.dataset.meter));
+                    if (!Number.isNaN(value)) {
+                        el.style.setProperty('--value', Math.max(0, Math.min(100, value)));
+                    }
+                });
+
+                renderTopClients(data.stats.top_clients || []);
+            } catch (error) {
+                console.warn('Не удалось обновить статистику дашборда', error);
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, (char) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[char]));
+        }
+
+        function renderTopClients(clients) {
+            const tbody = document.getElementById('top-clients-body');
+            if (!tbody) return;
+            if (!clients.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="color: var(--text-muted);">Пока нет трафика по клиентам</td></tr>';
+                return;
+            }
+            tbody.innerHTML = clients.map((client) => `
+                <tr>
+                    <td><span class="online-dot ${client.online ? 'active' : ''}"></span>${escapeHtml(client.name)}</td>
+                    <td class="right">${escapeHtml(client.rx)}</td>
+                    <td class="right">${escapeHtml(client.tx)}</td>
+                    <td class="right"><strong>${escapeHtml(client.total)}</strong></td>
+                </tr>
+            `).join('');
+        }
+
+        refreshDashboardStats();
+        setInterval(refreshDashboardStats, 1000);
+
+        document.querySelectorAll('.masked-ip').forEach((el) => {
+            el.addEventListener('click', (event) => {
+                event.stopPropagation();
+                el.classList.toggle('revealed');
+                if (!el.classList.contains('revealed')) el.blur();
+            });
+            el.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    el.click();
+                }
+            });
+        });
+
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.masked-ip.revealed').forEach((el) => {
+                el.classList.remove('revealed');
+                el.blur();
+            });
+        });
+    </script>
+<script src="/static/i18n.js"></script>
+<script>
+async function runPanelUpdate() {
+    const result = document.getElementById('panel-update-result');
+    if (!confirm('Запустить обновление панели? Если web update выключен, будет показана команда для терминала.')) return;
+    result.textContent = 'Проверка режима обновления...';
+    try {
+        const response = await fetch('/panel/update/run', { method: 'POST', credentials: 'same-origin' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            result.innerHTML = 'Web update выключен. Выполни команду выше в терминале сервера.';
+            return;
+        }
+        result.innerHTML = 'Обновление выполнено. Страница перезагрузится через несколько секунд.';
+        setTimeout(() => window.location.reload(), 3500);
+    } catch (error) {
+        result.textContent = 'Не удалось запустить обновление.';
+    }
+}
+</script>
+</body>
+</html>
+
+

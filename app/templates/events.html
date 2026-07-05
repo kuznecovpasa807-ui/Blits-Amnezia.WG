@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Журнал | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}"><a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Дашборд</a></li>
+                <li class="menu-item {% if current_page == 'clients' %}active{% endif %}"><a href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a></li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}"><a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a></li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}"><a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a></li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}"><a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a></li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}"><a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a></li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}"><a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a></li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}"><a href="/settings/api"><i class="fa-solid fa-code"></i> API</a></li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}"><a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a></li>
+                <li class="menu-item" style="margin-top: auto;"><a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a></li>
+            </ul>
+        </aside>
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">Журнал событий</h1>
+            </header>
+            <div class="content-body">
+                <div class="content-card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-clock-rotate-left"></i> Последние действия</h2>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div class="table-responsive">
+                            <table class="table-custom">
+                                <thead>
+                                    <tr>
+                                        <th>Время</th>
+                                        <th>Тип</th>
+                                        <th>Клиент</th>
+                                        <th>Событие</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for event in events %}
+                                    <tr>
+                                        <td>{{ event.created_at | datetime }}</td>
+                                        <td><span class="badge badge-gray">{{ event.event_type }}</span></td>
+                                        <td>{% if event.client_id %}<a href="/clients/{{ event.client_id }}">{{ event.client_name or event.client_id }}</a>{% else %}—{% endif %}</td>
+                                        <td>{{ event.message }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                    {% if not events %}
+                                    <tr><td colspan="4" style="text-align: center; padding: 40px; color: var(--text-muted);">Событий пока нет.</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+<script src="/static/i18n.js"></script>
+</body>
+</html>

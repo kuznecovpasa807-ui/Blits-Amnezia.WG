@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ client.name }} | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}"><a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Дашборд</a></li>
+                <li class="menu-item active"><a href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a></li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}"><a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a></li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}"><a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a></li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}"><a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a></li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}"><a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a></li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}"><a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a></li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}"><a href="/settings/api"><i class="fa-solid fa-code"></i> API</a></li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}"><a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a></li>
+                <li class="menu-item" style="margin-top: auto;"><a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a></li>
+            </ul>
+        </aside>
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">{{ client.name }}</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="refreshClientCheck()"><i class="fa-solid fa-stethoscope"></i> Проверить</button>
+                    <a href="/clients" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Назад</a>
+                </div>
+            </header>
+            <div class="content-body">
+                <div class="widgets-grid">
+                    <div class="widget-card">
+                        <div class="widget-info">
+                            <span class="widget-label">Статус</span>
+                            <span class="widget-value">{% if client.is_online %}Онлайн{% elif client.disabled_at %}Выключен{% elif client.is_expired %}Истек{% else %}Активен{% endif %}</span>
+                        </div>
+                        <div class="widget-icon-box icon-success"><i class="fa-solid fa-signal"></i></div>
+                    </div>
+                    <div class="widget-card">
+                        <div class="widget-info"><span class="widget-label">Трафик</span><span class="widget-value">{{ client.traffic_used_text }}</span></div>
+                        <div class="widget-icon-box icon-blue"><i class="fa-solid fa-chart-simple"></i></div>
+                    </div>
+                    <div class="widget-card">
+                        <div class="widget-info"><span class="widget-label">Интерфейс</span><span class="widget-value">{{ client.connected_interface or 'нет' }}</span></div>
+                        <div class="widget-icon-box icon-warning"><i class="fa-solid fa-network-wired"></i></div>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <div class="card-header"><h2 class="card-title"><i class="fa-solid fa-id-card"></i> Состояние клиента</h2></div>
+                    <div class="card-body">
+                        <div class="info-list">
+                            <div class="info-item"><span class="info-key">Внутренний IP</span><span class="info-val">{{ client.display_ip_address }}</span></div>
+                            <div class="info-item"><span class="info-key">Тип ключа</span><span class="info-val">{% if client.route_type == 'cascade' %}Каскад{% else %}Локальный{% endif %}</span></div>
+                            <div class="info-item"><span class="info-key">Создан</span><span class="info-val">{{ client.created_at | datetime }}</span></div>
+                            <div class="info-item"><span class="info-key">Действует до</span><span class="info-val">{{ client.expires_at | datetime }}</span></div>
+                            <div class="info-item"><span class="info-key">Последнее подключение</span><span class="info-val">{{ client.last_seen_text }}{% if client.connected_interface %}, {{ client.connected_interface }}{% endif %}</span></div>
+                            <div class="info-item"><span class="info-key">Получено / отправлено</span><span class="info-val">{{ client.transfer_rx_text }} / {{ client.transfer_tx_text }}</span></div>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 24px;">
+                            <a class="btn btn-primary" href="/clients/{{ client.id }}/download?version=2.0"><i class="fa-solid fa-download"></i> Скачать Amnezia 2.0</a>
+                            <a class="btn btn-secondary" href="/clients/{{ client.id }}/download?version=1.0"><i class="fa-solid fa-download"></i> Скачать Amnezia 1</a>
+                            <a class="btn btn-secondary" href="/clients/{{ client.id }}/download?version=2.0&split=true"><i class="fa-solid fa-route"></i> Скачать Split</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-card">
+                    <div class="card-header"><h2 class="card-title"><i class="fa-solid fa-list-check"></i> Проверка клиента</h2></div>
+                    <div id="client-check-body" class="card-body" style="display: flex; flex-direction: column; gap: 10px;">
+                        {% for check in checks %}
+                        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-main);">
+                            <div>
+                                <div style="font-weight:700;color:var(--dark);">{{ check.name }}</div>
+                                <div class="client-subtext">{{ check.message }}</div>
+                            </div>
+                            <span class="badge {% if check.ok %}badge-success{% else %}badge-danger{% endif %}">{% if check.ok %}OK{% else %}Ошибка{% endif %}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+<script>
+    async function refreshClientCheck() {
+        const body = document.getElementById('client-check-body');
+        body.innerHTML = '<span class="client-subtext">Проверка...</span>';
+        try {
+            const response = await fetch('/clients/{{ client.id }}/check', { credentials: 'same-origin' });
+            const data = await response.json();
+            body.innerHTML = data.checks.map((item) => `
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-main);">
+                    <div>
+                        <div style="font-weight:700;color:var(--dark);">${item.name}</div>
+                        <div class="client-subtext">${item.message}</div>
+                    </div>
+                    <span class="badge ${item.ok ? 'badge-success' : 'badge-danger'}">${item.ok ? 'OK' : 'Ошибка'}</span>
+                </div>
+            `).join('');
+        } catch (error) {
+            body.innerHTML = '<span class="badge badge-danger">Не удалось выполнить проверку</span>';
+        }
+    }
+</script>
+<script src="/static/i18n.js"></script>
+</body>
+</html>

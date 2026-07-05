@@ -1,0 +1,17 @@
+[Unit]
+Description=AmneziaWG Web Panel MVP Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/amnezia-panel-mvp
+Environment=PANEL_PORT=8080
+EnvironmentFile=-/root/amnezia-panel-mvp/data/panel.env
+ExecStart=/root/amnezia-panel-mvp/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PANEL_PORT}
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

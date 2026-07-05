@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Диагностика | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}"><a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Дашборд</a></li>
+                <li class="menu-item {% if current_page == 'clients' %}active{% endif %}"><a href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a></li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}"><a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a></li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}"><a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a></li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}"><a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a></li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}"><a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a></li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}"><a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a></li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}"><a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a></li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}"><a href="/settings/api"><i class="fa-solid fa-code"></i> API</a></li>
+                <li class="menu-item" style="margin-top: auto;"><a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a></li>
+            </ul>
+        </aside>
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">Диагностика</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="window.location.reload()"><i class="fa-solid fa-arrows-rotate"></i> Обновить</button>
+                </div>
+            </header>
+            <div class="content-body">
+                <div class="content-card" style="max-width: 920px;">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-list-check"></i> Проверка панели и VPN</h2>
+                    </div>
+                    <div class="card-body" style="display: flex; flex-direction: column; gap: 12px;">
+                        {% for check in checks %}
+                        <div style="display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; padding: 14px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-main);">
+                            <div>
+                                <div style="font-weight: 700; color: var(--dark);">{{ check.name }}</div>
+                                <div class="client-subtext" style="font-size: 12px;">{{ check.message }}</div>
+                            </div>
+                            {% if check.ok %}
+                            <span class="badge badge-success"><i class="fa-solid fa-check"></i> OK</span>
+                            {% else %}
+                            <span class="badge badge-danger"><i class="fa-solid fa-xmark"></i> Ошибка</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+<script src="/static/i18n.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+services:
+  amnezia-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: amnezia-panel
+    restart: always
+    network_mode: host
+    privileged: true
+    env_file:
+      - path: ./data/panel.env
+        required: false
+    volumes:
+      - /etc/amnezia/amneziawg:/etc/amnezia/amneziawg
+      - ./data:/app/data
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  blits-bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: blits-bot
+    restart: always
+    network_mode: host
+    environment:
+      - ADMIN_IDS=${ADMIN_IDS:-}
+    env_file:
+      - path: ./data/panel.env
+        required: false
+    depends_on:
+      - amnezia-panel
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: always
+    network_mode: host
+    profiles:
+      - ssl
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

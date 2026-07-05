@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каскад Amnezia | Blitz Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body data-theme="{{ request.cookies.get('panel_theme', 'light') }}">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon"><img src="/static/blitz-sloth-logo.svg?v=3" alt="Blitz"></div>
+                <div class="logo-text">Blitz Panel</div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if current_page == 'dashboard' %}active{% endif %}"><a href="/dashboard"><i class="fa-solid fa-chart-line"></i> Дашборд</a></li>
+                <li class="menu-item {% if current_page == 'clients' %}active{% endif %}"><a href="/clients"><i class="fa-solid fa-users"></i> Клиенты</a></li>
+                <li class="menu-item {% if current_page == 'events' %}active{% endif %}"><a href="/events"><i class="fa-solid fa-clock-rotate-left"></i> Журнал</a></li>
+                <li class="menu-item {% if current_page == 'diagnostics' %}active{% endif %}"><a href="/diagnostics"><i class="fa-solid fa-stethoscope"></i> Диагностика</a></li>
+                <li class="menu-item {% if current_page == 'password' %}active{% endif %}"><a href="/settings/password"><i class="fa-solid fa-key"></i> Смена пароля</a></li>
+                <li class="menu-item {% if current_page == 'vpn_settings' %}active{% endif %}"><a href="/settings/vpn"><i class="fa-solid fa-sliders"></i> Настройки VPN</a></li>
+                <li class="menu-item {% if current_page == 'cascade_settings' %}active{% endif %}"><a href="/settings/cascade"><i class="fa-solid fa-route"></i> Каскад</a></li>
+                <li class="menu-item {% if current_page == 'api_docs' %}active{% endif %}"><a href="/settings/api"><i class="fa-solid fa-code"></i> API</a></li>
+                <li class="menu-item {% if current_page == 'panel_settings' %}active{% endif %}"><a href="/settings/panel"><i class="fa-solid fa-window-maximize"></i> Настройки панели</a></li>
+                <li class="menu-item" style="margin-top: auto;"><a href="/logout" style="color: #f1f5f9;"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a></li>
+            </ul>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">Каскад Amnezia</h1>
+            </header>
+
+            <div class="content-body">
+                {% if success %}
+                <div class="alert alert-success">
+                    <span><i class="fa-solid fa-circle-check"></i> <strong>Готово.</strong> {{ success }}</span>
+                </div>
+                {% endif %}
+                {% if error %}
+                <div class="alert alert-danger">
+                    <span><i class="fa-solid fa-triangle-exclamation"></i> <strong>Ошибка:</strong> {{ error }}</span>
+                </div>
+                {% endif %}
+
+                <form action="/settings/cascade" method="post" class="content-card" style="max-width: 920px;">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-route"></i> Отдельный UDP-каскад на другой Amnezia-сервер</h2>
+                        {% if settings.enabled == '1' %}
+                        <span class="badge badge-success">Включен</span>
+                        {% else %}
+                        <span class="badge badge-gray">Отключен</span>
+                        {% endif %}
+                    </div>
+                    <div class="card-body">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+                            <div class="form-group">
+                                <label for="target_ip">IP целевого Amnezia-сервера</label>
+                                <input type="text" id="target_ip" name="target_ip" class="form-control" value="{{ settings.target_ip }}" placeholder="например, 1.2.3.4" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="v2_local_port">Входящий порт каскада 2.0</label>
+                                <input type="number" id="v2_local_port" name="v2_local_port" class="form-control" value="{{ settings.v2_local_port }}" min="1" max="65535" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="v2_target_port">Порт 2.0 на целевом сервере</label>
+                                <input type="number" id="v2_target_port" name="v2_target_port" class="form-control" value="{{ settings.v2_target_port }}" min="1" max="65535" required>
+                            </div>
+                        </div>
+
+                        <div style="padding: 18px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-main); margin: 8px 0 22px;">
+                            <label style="display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px; font-weight: 600;">
+                                <input type="checkbox" name="legacy_enabled" value="1" {% if settings.legacy_enabled == '1' %}checked{% endif %}>
+                                <span>Пробрасывать Legacy-интерфейс</span>
+                            </label>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="legacy_local_port">Входящий порт каскада Legacy</label>
+                                    <input type="number" id="legacy_local_port" name="legacy_local_port" class="form-control" value="{{ settings.legacy_local_port }}" min="1" max="65535">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="legacy_target_port">Порт Legacy на целевом сервере</label>
+                                    <input type="number" id="legacy_target_port" name="legacy_target_port" class="form-control" value="{{ settings.legacy_target_port }}" min="1" max="65535">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 22px;">
+                            Обычная Amnezia 2.0 продолжает жить на порту {{ settings.main_v2_port }}, Legacy на {{ settings.main_legacy_port }}.
+                            Каскад должен использовать отдельные входящие порты, например 54912/54913, чтобы не перехватывать текущих клиентов.
+                            Для каскадного ключа Endpoint должен быть IP этой панели и порт каскада, а сам ключ/peer должен соответствовать целевому Amnezia-серверу.
+                        </div>
+
+                        <div style="padding: 18px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-main); margin-bottom: 22px;">
+                            <h3 class="card-title" style="margin-bottom: 14px;"><i class="fa-solid fa-server"></i> Создание клиентов на целевой панели</h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="target_panel_url">URL целевой Blitz Panel</label>
+                                    <input type="text" id="target_panel_url" name="target_panel_url" class="form-control" value="{{ settings.target_panel_url }}" placeholder="http://1.2.3.4:1010">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="target_api_token">API-токен целевой панели</label>
+                                    <input type="password" id="target_api_token" name="target_api_token" class="form-control" value="{{ settings.target_api_token }}" placeholder="awg_bot_api_token_...">
+                                </div>
+                            </div>
+                            <div class="client-subtext" style="margin-top: 10px;">Нужно для кнопки “Новый клиент → Каскад”: peer создается на целевом сервере, а ключ выдается с Endpoint этой панели.</div>
+                        </div>
+
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            <button type="submit" name="action" value="apply" class="btn btn-primary"><i class="fa-solid fa-plug-circle-bolt"></i> Включить каскад</button>
+                            <button type="submit" name="action" value="disable" class="btn btn-secondary" formnovalidate><i class="fa-solid fa-plug-circle-xmark"></i> Отключить каскад</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="content-card" style="max-width: 920px;">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-list"></i> Активные правила Blitz Cascade</h2>
+                    </div>
+                    <div class="card-body">
+                        {% if active_rules %}
+                        <div class="config-preview-box" style="max-height: 260px;">{% for rule in active_rules %}{{ rule }}
+{% endfor %}</div>
+                        {% else %}
+                        <div style="color: var(--text-muted);">Активных правил каскада сейчас нет.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+<script src="/static/i18n.js"></script>
+</body>
+</html>

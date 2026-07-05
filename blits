@@ -1,0 +1,1158 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Цветовая схема
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+GRAY='\033[0;90m'
+NC='\033[0m' # No Color
+
+APP_DIR="${BLITS_INSTALL_DIR:-/root/Blits-Amnezia.WG}"
+if [ ! -d "$APP_DIR" ] && [ -d "/opt/blitz-amnezia-panel" ]; then
+    APP_DIR="/opt/blitz-amnezia-panel"
+fi
+ENV_FILE="$APP_DIR/data/panel.env"
+DB_FILE="$APP_DIR/data/panel.db"
+
+require_root() {
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo -e "${RED}Ошибка: Запустите скрипт от имени суперпользователя root.${NC}"
+        exit 1
+    fi
+}
+
+ensure_env() {
+    mkdir -p "$(dirname "$ENV_FILE")"
+    touch "$ENV_FILE"
+    chmod 600 "$ENV_FILE" 2>/dev/null || true
+}
+
+get_env() {
+    grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- || true
+}
+
+set_env() {
+    ensure_env
+    local key="$1"
+    local value="$2"
+    if grep -qE "^${key}=" "$ENV_FILE"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    fi
+}
+
+# Определение команды Docker Compose
+DOCKER_COMPOSE_CMD="docker compose"
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+fi
+
+restart_panel() {
+    echo -e "${YELLOW}Перезапуск контейнеров панели...${NC}"
+    cd "$APP_DIR"
+    if [ "$(get_env PANEL_HTTPS)" = "1" ]; then
+        $DOCKER_COMPOSE_CMD --profile ssl up -d --build
+    else
+        $DOCKER_COMPOSE_CMD up -d --build
+    fi
+    echo -e "${GREEN}Панель перезапущена успешно.${NC}"
+}
+
+public_ip() {
+    curl -fsS https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}'
+}
+
+generate_web_path() {
+    printf '/blits-%s\n' "$(openssl rand -hex 16)"
+}
+
+wait_for_apt_locks() {
+    local waited=0
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+          fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
+          fuser /var/cache/apt/archives/lock >/dev/null 2>&1; do
+        if [ "$waited" -ge 300 ]; then
+            echo -e "${RED}Система обновлений apt/dpkg заблокирована более 5 минут. Попробуйте позже.${NC}" >&2
+            return 1
+        fi
+        echo -e "${YELLOW}Система apt/dpkg занята, ожидаем 10 секунд...${NC}" >&2
+        sleep 10
+        waited=$((waited + 10))
+    done
+}
+
+apt_update() {
+    wait_for_apt_locks
+    DEBIAN_FRONTEND=noninteractive apt-get update
+}
+
+apt_install() {
+    wait_for_apt_locks
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+}
+
+panel_url() {
+    local port web_path domain scheme host https
+    port="$(get_env PANEL_PORT)"
+    web_path="$(get_env PANEL_WEB_PATH)"
+    domain="$(get_env PANEL_DOMAIN)"
+    https="$(get_env PANEL_HTTPS)"
+    port="${port:-80}"
+    web_path="${web_path:-/}"
+    scheme="http"
+    if [ "$https" = "1" ]; then
+        scheme="https"
+    fi
+    host="${domain:-$(public_ip)}"
+    if { [ "$scheme" = "http" ] && [ "$port" = "80" ]; } || { [ "$scheme" = "https" ] && [ "$port" = "443" ]; } || [ "$https" = "1" ]; then
+        printf '%s://%s%s\n' "$scheme" "$host" "$web_path"
+    else
+        printf '%s://%s:%s%s\n' "$scheme" "$host" "$port" "$web_path"
+    fi
+}
+
+# Встроенный Python-мост для работы с клиентами в контейнере
+PYTHON_BRIDGE=$(cat <<'EOF'
+import sys
+import os
+import sqlite3
+import json
+import datetime
+import uuid
+import re
+
+sys.path.append('/app')
+
+from app.database import get_db_connection
+from app.vpn_manager import (
+    generate_keypair, generate_preshared_key, get_next_free_ip,
+    generate_client_config, generate_legacy_client_config,
+    rebuild_and_sync_vpn_config
+)
+from app.deeplink import generate_amnezia_deeplink
+from app.audit import log_event
+from app.config import CLIENTS_DIR, QR_DIR
+
+cmd = sys.argv[1] if len(sys.argv) > 1 else 'list'
+
+if cmd == 'counts':
+    conn = get_db_connection()
+    now = datetime.datetime.utcnow().isoformat()
+    total = conn.execute("SELECT COUNT(*) FROM clients WHERE deleted_at IS NULL").fetchone()[0]
+    active = conn.execute("SELECT COUNT(*) FROM clients WHERE deleted_at IS NULL AND (disabled_at IS NULL OR disabled_at = '') AND expires_at > ?", (now,)).fetchone()[0]
+    expired = conn.execute("SELECT COUNT(*) FROM clients WHERE deleted_at IS NULL AND expires_at <= ? AND (disabled_at IS NULL OR disabled_at = '')", (now,)).fetchone()[0]
+    blocked = conn.execute("SELECT COUNT(*) FROM clients WHERE deleted_at IS NULL AND disabled_at IS NOT NULL AND disabled_at != ''").fetchone()[0]
+    print(f"{total} {active} {expired} {blocked}")
+    conn.close()
+
+elif cmd == 'list':
+    conn = get_db_connection()
+    now = datetime.datetime.utcnow().isoformat()
+    rows = conn.execute("SELECT id, name, ip_address, traffic_limit_gb, traffic_used_bytes, expires_at, disabled_at FROM clients WHERE deleted_at IS NULL").fetchall()
+    if not rows:
+        print("EMPTY")
+    else:
+        for idx, r in enumerate(rows, 1):
+            used_gb = r['traffic_used_bytes'] / (1024**3)
+            limit_gb = r['traffic_limit_gb']
+            is_expired = r['expires_at'] <= now
+            status = "BLOCKED" if r['disabled_at'] else ("EXPIRED" if is_expired else "ACTIVE")
+            
+            try:
+                exp_show = datetime.datetime.fromisoformat(r['expires_at']).strftime("%Y-%m-%d")
+            except:
+                exp_show = r['expires_at'][:10]
+            
+            print(f"{idx};{r['id']};{r['name']};{r['ip_address']};{used_gb:.2f};{limit_gb:.1f};{exp_show};{status}")
+    conn.close()
+
+elif cmd == 'create':
+    name = sys.argv[2]
+    days = int(sys.argv[3])
+    traffic_limit = float(sys.argv[4])
+    
+    name = re.sub(r'[\r\n]', ' ', name).strip()
+    name = re.sub(r'[\\\'"`;|&<>$]', '', name)
+    if not name:
+        name = "client"
+        
+    client_id = str(uuid.uuid4())
+    client_private_key, client_public_key = generate_keypair()
+    preshared_key = generate_preshared_key()
+    client_ip = get_next_free_ip()
+    
+    now = datetime.datetime.utcnow()
+    created_at = now.isoformat()
+    expires_at = (now + datetime.timedelta(days=days)).isoformat()
+    
+    conn = get_db_connection()
+    conn.execute(
+        """
+        INSERT INTO clients (
+            id, name, ip_address, public_key, private_key, preshared_key,
+            traffic_limit_gb, traffic_used_bytes, expires_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (client_id, name, client_ip, client_public_key, client_private_key, preshared_key, traffic_limit, 0, expires_at, created_at)
+    )
+    conn.commit()
+    conn.close()
+    
+    config_text = generate_client_config(client_ip, client_private_key, preshared_key=preshared_key)
+    with open(CLIENTS_DIR / f"{client_id}.conf", "w") as f:
+        f.write(config_text)
+        
+    import qrcode
+    qr = qrcode.QRCode(version=1, box_size=10, border=3)
+    qr.add_data(config_text)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    qr_img.save(QR_DIR / f"{client_id}.png")
+    
+    rebuild_and_sync_vpn_config()
+    log_event("client_created", f"Создан клиент {name} через CLI.", client_id, name)
+    print(f"SUCCESS;{client_id};{client_ip}")
+
+elif cmd == 'disable':
+    client_id = sys.argv[2]
+    conn = get_db_connection()
+    client = conn.execute("SELECT name FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if client:
+        now = datetime.datetime.utcnow().isoformat()
+        conn.execute("UPDATE clients SET disabled_at = ? WHERE id = ?", (now, client_id))
+        conn.commit()
+        rebuild_and_sync_vpn_config()
+        log_event("client_disabled", f"Клиент {client['name']} отключен через CLI.", client_id, client['name'])
+        print("SUCCESS")
+    else:
+        print("ERROR: Not found")
+    conn.close()
+
+elif cmd == 'enable':
+    client_id = sys.argv[2]
+    conn = get_db_connection()
+    client = conn.execute("SELECT name FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if client:
+        conn.execute("UPDATE clients SET disabled_at = NULL WHERE id = ?", (client_id,))
+        conn.commit()
+        rebuild_and_sync_vpn_config()
+        log_event("client_enabled", f"Клиент {client['name']} включен через CLI.", client_id, client['name'])
+        print("SUCCESS")
+    else:
+        print("ERROR: Not found")
+    conn.close()
+
+elif cmd == 'extend':
+    client_id = sys.argv[2]
+    days = int(sys.argv[3])
+    conn = get_db_connection()
+    client = conn.execute("SELECT name, expires_at FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if client:
+        current_expire = datetime.datetime.fromisoformat(client['expires_at'])
+        if current_expire < datetime.datetime.utcnow():
+            current_expire = datetime.datetime.utcnow()
+        new_expire = (current_expire + datetime.timedelta(days=days)).isoformat()
+        conn.execute("UPDATE clients SET expires_at = ?, disabled_at = NULL WHERE id = ?", (new_expire, client_id))
+        conn.commit()
+        rebuild_and_sync_vpn_config()
+        log_event("client_extended", f"Клиент {client['name']} продлен на {days} дн. через CLI.", client_id, client['name'])
+        print(f"SUCCESS;{new_expire}")
+    else:
+        print("ERROR: Not found")
+    conn.close()
+
+elif cmd == 'delete':
+    client_id = sys.argv[2]
+    conn = get_db_connection()
+    client = conn.execute("SELECT name FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if client:
+        now = datetime.datetime.utcnow().isoformat()
+        conn.execute("UPDATE clients SET deleted_at = ? WHERE id = ?", (now, client_id))
+        conn.commit()
+        rebuild_and_sync_vpn_config()
+        log_event("client_deleted", f"Клиент {client['name']} удален через CLI.", client_id, client['name'])
+        print("SUCCESS")
+    else:
+        print("ERROR: Not found")
+    conn.close()
+
+elif cmd == 'details':
+    client_id = sys.argv[2]
+    conn = get_db_connection()
+    client = conn.execute("SELECT * FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if client:
+        config_text = generate_client_config(client['ip_address'], client['private_key'], preshared_key=client['preshared_key'])
+        config_text_legacy = generate_legacy_client_config(client['ip_address'], client['private_key'], preshared_key=client['preshared_key'])
+        deep_link = generate_amnezia_deeplink(config_text_legacy, version="1.0", client_public_key=client['public_key'], client_name=client['name'])
+        deep_link_v2 = generate_amnezia_deeplink(config_text, version="2.0", client_public_key=client['public_key'], client_name=client['name'])
+        
+        print("===DETAILS===")
+        print(f"id:{client['id']}")
+        print(f"name:{client['name']}")
+        print(f"ip:{client['ip_address']}")
+        print(f"pubkey:{client['public_key']}")
+        print(f"limit:{client['traffic_limit_gb']}")
+        print(f"used:{client['traffic_used_bytes']}")
+        print(f"expires:{client['expires_at']}")
+        print(f"deeplink:{deep_link}")
+        print(f"deeplink_v2:{deep_link_v2}")
+        print("===CONFIG===")
+        print(config_text)
+        print("===CONFIG_LEGACY===")
+        print(config_text_legacy)
+    else:
+        print("ERROR: Not found")
+    conn.close()
+
+elif cmd == 'qr':
+    client_id = sys.argv[2]
+    legacy = len(sys.argv) > 3 and sys.argv[3] == 'legacy'
+    conn = get_db_connection()
+    client = conn.execute("SELECT * FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if client:
+        if legacy:
+            config_text = generate_legacy_client_config(client['ip_address'], client['private_key'], preshared_key=client['preshared_key'])
+        else:
+            config_text = generate_client_config(client['ip_address'], client['private_key'], preshared_key=client['preshared_key'])
+        import qrcode
+        qr = qrcode.QRCode(version=1, box_size=1, border=1)
+        qr.add_data(config_text)
+        qr.make(fit=True)
+        qr.print_ascii(out=sys.stdout, invert=True)
+    conn.close()
+EOF
+)
+
+run_py() {
+    if ! docker ps --format '{{.Names}}' | grep -q 'amnezia-panel'; then
+        echo "CONTAINER_DOWN"
+        return
+    fi
+    docker exec -i amnezia-panel python3 - "$@" <<< "$PYTHON_BRIDGE"
+}
+
+get_system_metrics() {
+    # Uptime
+    UPTIME=$(uptime -p | sed 's/up //g' 2>/dev/null || uptime | awk -F'up ' '{print $2}' | cut -d, -f1)
+    
+    # CPU
+    CPU_LOAD=$(uptime | awk -F'load average:' '{ print $2 }' | cut -d, -f1 | sed 's/ //g' 2>/dev/null || echo "N/A")
+    
+    # RAM
+    if command -v free >/dev/null 2>&1; then
+        local ram_u ram_t
+        ram_u=$(free -m | awk '/Mem:/ { print $3 }')
+        ram_t=$(free -m | awk '/Mem:/ { print $2 }')
+        RAM_INFO="${ram_u}/${ram_t} MB"
+    else
+        RAM_INFO="N/A"
+    fi
+    
+    # Disk
+    DISK_INFO=$(df -h / | awk '/\// { print $3 "/" $2 " (" $5 ")" }' | tail -n1 2>/dev/null || echo "N/A")
+    
+    # BBR status
+    if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
+        BBR_STATUS="${GREEN}ВКЛЮЧЕН${NC}"
+    else
+        BBR_STATUS="${RED}ВЫКЛЮЧЕН (Нажмите 8)${NC}"
+    fi
+    
+    # Container Status
+    if docker ps --format '{{.Names}}' | grep -q 'amnezia-panel'; then
+        DOCKER_STATUS="${GREEN}ЗАПУЩЕН${NC}"
+    else
+        DOCKER_STATUS="${RED}ОСТАНОВЛЕН${NC}"
+    fi
+    
+    # VPN Stats
+    local counts_out
+    counts_out=$(run_py counts)
+    if [ "$counts_out" = "CONTAINER_DOWN" ] || [ -z "$counts_out" ]; then
+        CLIENTS_INFO="N/A (Контейнер оффлайн)"
+    else
+        local total active expired blocked
+        total=$(echo "$counts_out" | awk '{print $1}')
+        active=$(echo "$counts_out" | awk '{print $2}')
+        expired=$(echo "$counts_out" | awk '{print $3}')
+        blocked=$(echo "$counts_out" | awk '{print $4}')
+        CLIENTS_INFO="${GREEN}Активно: $active${NC} | ${RED}Истекли: $expired${NC} | ${YELLOW}Заблочено: $blocked${NC} | Всего: $total"
+    fi
+}
+
+show_dashboard() {
+    clear
+    get_system_metrics
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "${CYAN}⚡              ${BOLD}BLITS AMNEZIAWG PANEL MANAGEMENT SYSTEM v2.0${NC}             ${CYAN}⚡${NC}"
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "  ${BOLD}Uptime:${NC} $UPTIME | ${BOLD}CPU Load:${NC} $CPU_LOAD | ${BOLD}RAM:${NC} $RAM_INFO"
+    echo -e "  ${BOLD}Диск /:${NC} $DISK_INFO | ${BOLD}Ускорение BBR:${NC} $BBR_STATUS"
+    echo -e "  ${BOLD}Контейнер:${NC} $DOCKER_STATUS | ${BOLD}Адрес:${NC} $(panel_url)"
+    echo -e "  ${BOLD}Клиенты:${NC} $CLIENTS_INFO"
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "  ${BOLD}1)${NC} 📊 Полный статус и здоровье контейнеров"
+    echo -e "  ${BOLD}2)${NC} 🔗 Показать ссылки для входа (+ QR-код для телефона)"
+    echo -e "  ${BOLD}3)${NC} 👥 Управление VPN Клиентами (Список, Создать, Продлить, QR)"
+    echo -e "  ${BOLD}4)${NC} ⚙️ Настройки сети (Порт, Домен, Секретный путь, API токен)"
+    echo -e "  ${BOLD}5)${NC} 🔑 Сменить пароль администратора"
+    echo -e "  ${BOLD}6)${NC} 🌐 Сертификат Let's Encrypt SSL (для IP / Домена)"
+    echo -e "  ${BOLD}7)${NC} 🛠️ Диагностика сети и Просмотр Логов"
+    echo -e "  ${BOLD}8)${NC} 💾 Бэкапы, Оптимизация БД и Тюнинг (BBR)"
+    echo -e "  ${BOLD}9)${NC} 🔄 Перезапустить контейнеры панели"
+    echo -e "  ${BOLD}0)${NC} ❌ Выйти"
+    echo -e "${CYAN}=========================================================================${NC}"
+}
+
+show_status_detailed() {
+    clear
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "📊                  ${BOLD}ПОЛНЫЙ СТАТУС СЕРВЕРА И СЕРВИСОВ${NC}                    📊"
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "  ${BOLD}Адрес панели:${NC} $(panel_url)"
+    echo -e "  ${BOLD}Папка установки:${NC} $APP_DIR"
+    echo -e "  ${BOLD}Порт панели:${NC} $(get_env PANEL_PORT)"
+    echo -e "  ${BOLD}Домен:${NC} $(get_env PANEL_DOMAIN)"
+    echo -e "  ${BOLD}Секретный путь:${NC} $(get_env PANEL_WEB_PATH)"
+    echo -e "  ${BOLD}HTTPS:${NC} $(get_env PANEL_HTTPS)"
+    echo -e "  ${BOLD}Имя сертификата:${NC} $(get_env PANEL_CERT_NAME)"
+    echo -e "  ${BOLD}API токен бота:${NC} $(get_env TELEGRAM_API_TOKEN)"
+    echo -e "-------------------------------------------------------------------------"
+    echo -e "${BOLD}Docker Контейнеры:${NC}"
+    $DOCKER_COMPOSE_CMD -f "$APP_DIR/docker-compose.yml" ps
+    echo -e "-------------------------------------------------------------------------"
+    echo -e "${BOLD}Службы VPN в системе (Host Systemd):${NC}"
+    systemctl is-active awg-quick@awg0 2>/dev/null | sed 's/^/awg0: /' || true
+    systemctl is-active awg-quick@awg_legacy 2>/dev/null | sed 's/^/awg_legacy: /' || true
+    echo -e "-------------------------------------------------------------------------"
+    read -rp "Нажмите Enter для продолжения..."
+}
+
+show_access_links() {
+    clear
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "🔗                      ${BOLD}ДОСТУП К ПАНЕЛИ УПРАВЛЕНИЯ${NC}                       🔗"
+    echo -e "${CYAN}=========================================================================${NC}"
+    local url
+    url=$(panel_url)
+    echo -e "  ${BOLD}Ссылка для входа:${NC}"
+    echo -e "  ${GREEN}$url${NC}"
+    echo -e "-------------------------------------------------------------------------"
+    echo -e "  Вы хотите отобразить QR-код для этой ссылки,"
+    echo -e "  чтобы быстро открыть панель на мобильном телефоне?"
+    read -rp "Отобразить QR-код? (y/n) [n]: " qr_choice
+    if [ "$qr_choice" = "y" ] || [ "$qr_choice" = "Y" ]; then
+        echo -e "\n${BOLD}Отсканируйте этот QR-код для перехода по ссылке:${NC}"
+        docker exec -i amnezia-panel python3 - "$url" <<'PY'
+import sys, qrcode
+url = sys.argv[1]
+qr = qrcode.QRCode(version=1, box_size=1, border=1)
+qr.add_data(url)
+qr.make(fit=True)
+qr.print_ascii(out=sys.stdout, invert=True)
+PY
+    fi
+    read -rp "Нажмите Enter для продолжения..."
+}
+
+create_client_interactive() {
+    echo -e "\n${BOLD}--- СОЗДАНИЕ НОВОГО КЛИЕНТА ---${NC}"
+    read -rp "Имя клиента (например, client_ivan): " name
+    if [ -z "$name" ]; then
+        echo -e "${RED}Имя не может быть пустым.${NC}"
+        sleep 1.5
+        return
+    fi
+    read -rp "Срок действия в днях [30]: " days
+    days="${days:-30}"
+    read -rp "Лимит трафика в ГБ (0 для безлимита) [0]: " limit
+    limit="${limit:-0}"
+    
+    echo -e "${YELLOW}Генерация ключей и добавление клиента...${NC}"
+    local res
+    res=$(run_py create "$name" "$days" "$limit")
+    
+    if [[ "$res" == SUCCESS* ]]; then
+        local ip
+        ip=$(echo "$res" | cut -d';' -f3)
+        echo -e "${GREEN}Клиент успешно создан! Локальный IP: $ip${NC}"
+    else
+        echo -e "${RED}Ошибка создания клиента: $res${NC}"
+    fi
+    sleep 2
+}
+
+manage_selected_client() {
+    local client_id="$1"
+    local client_name="$2"
+    
+    while true; do
+        clear
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "👤 Клиент: ${BOLD}$client_name${NC} (ID: $client_id)"
+        echo -e "${CYAN}=========================================================================${NC}"
+        
+        local details
+        details=$(run_py details "$client_id")
+        
+        if [[ "$details" == ERROR* ]]; then
+            echo -e "${RED}Ошибка получения данных: $details${NC}"
+            read -rp "Нажмите Enter для продолжения..."
+            return
+        fi
+        
+        local ip limit used expires deeplink deeplink_v2
+        ip=$(echo "$details" | grep "^ip:" | cut -d':' -f2-)
+        limit=$(echo "$details" | grep "^limit:" | cut -d':' -f2-)
+        used=$(echo "$details" | grep "^used:" | cut -d':' -f2-)
+        expires=$(echo "$details" | grep "^expires:" | cut -d':' -f2-)
+        deeplink=$(echo "$details" | grep "^deeplink:" | cut -d':' -f2-)
+        deeplink_v2=$(echo "$details" | grep "^deeplink_v2:" | cut -d':' -f2-)
+        
+        local used_gb
+        used_gb=$(awk "BEGIN {print $used / 1024 / 1024 / 1024}")
+        local limit_str="${limit} GB"
+        if [ "$limit" = "0.0" ] || [ "$limit" = "0" ]; then
+            limit_str="Безлимит"
+        fi
+        
+        echo -e "  ${BOLD}Локальный IP:${NC} $ip"
+        echo -e "  ${BOLD}Трафик:${NC} $(printf "%.2f" "$used_gb") GB / $limit_str"
+        echo -e "  ${BOLD}Истекает:${NC} $expires"
+        echo -e "  ${BOLD}Deep Link (Amnezia v2):${NC} $deeplink_v2"
+        echo -e "-------------------------------------------------------------------------"
+        echo -e "  ${BOLD}1)${NC} 📱 Показать AmneziaWG QR-код в терминале"
+        echo -e "  ${BOLD}2)${NC} 📱 Показать Legacy WireGuard QR-код в терминале"
+        echo -e "  ${BOLD}3)${NC} 📄 Показать AmneziaWG конфиг как текст"
+        echo -e "  ${BOLD}4)${NC} 📄 Показать Legacy WireGuard конфиг как текст"
+        echo -e "  ${BOLD}5)${NC} 📅 Продлить подписку"
+        echo -e "  ${BOLD}6)${NC} 🚫 Заблокировать / Разблокировать"
+        echo -e "  ${BOLD}7)${NC} 🗑️ Удалить клиента"
+        echo -e "  ${BOLD}0)${NC} ↩️ Назад к списку клиентов"
+        echo -e "${CYAN}=========================================================================${NC}"
+        
+        read -rp "Выберите действие: " choice
+        case "$choice" in
+            1)
+                echo -e "\n${BOLD}Отсканируйте этот QR-код приложением AmneziaVPN (AmneziaWG):${NC}"
+                run_py qr "$client_id"
+                read -rp "Нажмите Enter для продолжения..."
+                ;;
+            2)
+                echo -e "\n${BOLD}Отсканируйте этот QR-код приложением WireGuard (Legacy):${NC}"
+                run_py qr "$client_id" "legacy"
+                read -rp "Нажмите Enter для продолжения..."
+                ;;
+            3)
+                echo -e "\n${BOLD}--- КОНФИГУРАЦИЯ AMNEZIAWG ---${NC}"
+                echo "$details" | sed -n '/===CONFIG===/,/===CONFIG_LEGACY===/p' | grep -v '==='
+                read -rp "Нажмите Enter для продолжения..."
+                ;;
+            4)
+                echo -e "\n${BOLD}--- КОНФИГУРАЦИЯ LEGACY WIREGUARD ---${NC}"
+                echo "$details" | sed -n '/===CONFIG_LEGACY===/,$p' | grep -v '==='
+                read -rp "Нажмите Enter для продолжения..."
+                ;;
+            5)
+                read -rp "На сколько дней продлить?: " days
+                if [[ "$days" =~ ^[0-9]+$ ]]; then
+                    local res
+                    res=$(run_py extend "$client_id" "$days")
+                    if [[ "$res" == SUCCESS* ]]; then
+                        echo -e "${GREEN}Подписка успешно продлена!${NC}"
+                    else
+                        echo -e "${RED}Ошибка: $res${NC}"
+                    fi
+                else
+                    echo -e "${RED}Некорректное количество дней.${NC}"
+                fi
+                sleep 1.5
+                ;;
+            6)
+                local status_check
+                status_check=$(run_py list | grep ";$client_id;" | cut -d';' -f8)
+                if [ "$status_check" = "BLOCKED" ]; then
+                    echo -e "${YELLOW}Активация клиента...${NC}"
+                    run_py enable "$client_id" >/dev/null
+                    echo -e "${GREEN}Клиент успешно активирован!${NC}"
+                else
+                    echo -e "${YELLOW}Блокировка клиента...${NC}"
+                    run_py disable "$client_id" >/dev/null
+                    echo -e "${RED}Клиент успешно заблокирован!${NC}"
+                fi
+                sleep 1.5
+                ;;
+            7)
+                read -rp "Вы действительно хотите УДАЛИТЬ клиента $client_name? (y/n): " confirm
+                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+                    run_py delete "$client_id" >/dev/null
+                    echo -e "${RED}Клиент удален из базы данных.${NC}"
+                    sleep 1.5
+                    return
+                fi
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Неизвестное действие.${NC}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+client_manager_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "👥                       ${BOLD}УПРАВЛЕНИЕ VPN КЛИЕНТАМИ${NC}                         👥"
+        echo -e "${CYAN}=========================================================================${NC}"
+        
+        local clients_data
+        clients_data=$(run_py list)
+        
+        if [ "$clients_data" = "CONTAINER_DOWN" ]; then
+            echo -e "${RED}Ошибка: контейнер amnezia-panel выключен!${NC}"
+            read -rp "Нажмите Enter для продолжения..."
+            return
+        elif [ "$clients_data" = "EMPTY" ] || [ -z "$clients_data" ]; then
+            echo -e "Клиентов в базе данных нет."
+            echo -e "-------------------------------------------------------------------------"
+            echo -e "1) ➕ Создать нового клиента (или введите C)"
+            echo -e "0) ↩️ Вернуться в главное меню"
+            echo -e "-------------------------------------------------------------------------"
+            read -rp "Выберите: " action
+            if [ "$action" = "1" ] || [ "$action" = "c" ] || [ "$action" = "C" ]; then
+                create_client_interactive
+            elif [ "$action" = "0" ]; then
+                return
+            fi
+        else
+            printf "${BOLD}%-4s %-22s %-15s %-22s %-10s${NC}\n" "#" "Имя клиента" "IP Адрес" "Трафик (Использовано/Лимит)" "Статус"
+            echo -e "-------------------------------------------------------------------------"
+            
+            local count=0
+            declare -A c_ids
+            declare -A c_names
+            
+            # Разбираем построчно
+            while IFS=';' read -r idx id name ip used limit expires status; do
+                count=$idx
+                c_ids[$idx]="$id"
+                c_names[$idx]="$name"
+                
+                local status_color="$GREEN"
+                if [ "$status" = "EXPIRED" ]; then
+                    status_color="$RED"
+                elif [ "$status" = "BLOCKED" ]; then
+                    status_color="$YELLOW"
+                fi
+                
+                local limit_str="${limit} GB"
+                if [ "$limit" = "0.0" ]; then
+                    limit_str="Безлимит"
+                fi
+                
+                printf "%-4s %-22s %-15s %-22s %b%-10s%b\n" \
+                    "$idx" "$name" "$ip" "${used} / ${limit_str}" "$status_color" "$status" "$NC"
+            done <<< "$clients_data"
+            
+            echo -e "-------------------------------------------------------------------------"
+            echo -e "➕ Введите ${BOLD}C${NC} для создания нового клиента"
+            echo -e "↩️ Введите ${BOLD}0${NC} для выхода"
+            echo -e "👉 Выберите номер клиента ${BOLD}(1-$count)${NC} для просмотра QR/действий"
+            echo -e "-------------------------------------------------------------------------"
+            
+            read -rp "Ваш выбор: " action
+            if [ "$action" = "0" ]; then
+                return
+            elif [ "$action" = "c" ] || [ "$action" = "C" ]; then
+                create_client_interactive
+            elif [[ "$action" =~ ^[0-9]+$ ]] && [ "$action" -le "$count" ] && [ "$action" -gt 0 ]; then
+                manage_selected_client "${c_ids[$action]}" "${c_names[$action]}"
+            else
+                echo -e "${RED}Неверный ввод.${NC}"
+                sleep 1
+            fi
+        fi
+    done
+}
+
+network_settings_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "⚙️                       ${BOLD}СЕТЕВЫЕ НАСТРОЙКИ ПАНЕЛИ${NC}                        ⚙️"
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "  Текущий адрес: $(panel_url)"
+        echo -e "  Порт: $(get_env PANEL_PORT) | Домен: $(get_env PANEL_DOMAIN) | Путь: $(get_env PANEL_WEB_PATH)"
+        echo -e "-------------------------------------------------------------------------"
+        echo -e "  ${BOLD}1)${NC} Изменить порт панели"
+        echo -e "  ${BOLD}2)${NC} Изменить доменное имя"
+        echo -e "  ${BOLD}3)${NC} Установить секретный путь вручную"
+        echo -e "  ${BOLD}4)${NC} Перегенерировать секретный путь случайно"
+        echo -e "  ${BOLD}5)${NC} Перегенерировать API токен бота"
+        echo -e "  ${BOLD}0)${NC} Назад в главное меню"
+        echo -e "${CYAN}=========================================================================${NC}"
+        
+        read -rp "Выберите опцию: " choice
+        case "$choice" in
+            1) change_port ;;
+            2) change_domain ;;
+            3) set_web_path ;;
+            4) regenerate_web_path ;;
+            5) regenerate_api_token ;;
+            0) return ;;
+            *) echo -e "${RED}Неизвестная опция.${NC}" ; sleep 1 ;;
+        esac
+    done
+}
+
+change_port() {
+    read -rp "Новый порт панели: " port
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        echo -e "${RED}Некорректный порт.${NC}"
+        sleep 1.5
+        return
+    fi
+    
+    if ss -tulnp 2>/dev/null | grep -qE ":$port\s"; then
+        echo -e "${YELLOW}Внимание: Порт $port уже используется каким-то процессом на сервере!${NC}"
+        read -rp "Привязать панель к этому порту все равно? (y/n) [n]: " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+            return
+        fi
+    fi
+    
+    set_env PANEL_PORT "$port"
+    python3 - "$DB_FILE" "$port" <<'PY' || true
+import sqlite3, sys
+db, port = sys.argv[1], sys.argv[2]
+conn = sqlite3.connect(db)
+conn.execute("insert or replace into settings(key,value) values('panel_port', ?)", (port,))
+conn.commit()
+conn.close()
+PY
+    restart_panel
+    echo -e "${GREEN}Порт успешно изменен. Адрес: $(panel_url)${NC}"
+    sleep 2
+}
+
+change_domain() {
+    read -rp "Домен (без http:// и https://, пусто для сброса): " domain
+    set_env PANEL_DOMAIN "$domain"
+    python3 - "$DB_FILE" "$domain" <<'PY' || true
+import sqlite3, sys
+db, domain = sys.argv[1], sys.argv[2]
+conn = sqlite3.connect(db)
+conn.execute("insert or replace into settings(key,value) values('panel_domain', ?)", (domain,))
+conn.commit()
+conn.close()
+PY
+    restart_panel
+    echo -e "${GREEN}Домен обновлен. Адрес: $(panel_url)${NC}"
+    sleep 2
+}
+
+regenerate_web_path() {
+    local old_path web_path
+    old_path="$(get_env PANEL_WEB_PATH)"
+    web_path="$(generate_web_path)"
+    set_env PANEL_WEB_PATH "$web_path"
+    restart_panel
+    echo -e "Старый путь: ${old_path:-не задан}"
+    echo -e "${GREEN}Новый секретный путь: $web_path${NC}"
+    echo -e "Адрес входа: $(panel_url)"
+    sleep 3
+}
+
+set_web_path() {
+    read -rp "Новый секретный путь (например /blits-panel): " web_path
+    web_path="/${web_path#/}"
+    if [ "$web_path" = "/" ]; then
+        echo -e "${RED}Путь по умолчанию / не разрешен в целях безопасности.${NC}"
+        sleep 2
+        return
+    fi
+    if ! [[ "$web_path" =~ ^/[A-Za-z0-9._~-]+$ ]]; then
+        echo -e "${RED}Используйте только буквы, цифры, точки, дефисы и знаки подчеркивания.${NC}"
+        sleep 2
+        return
+    fi
+    set_env PANEL_WEB_PATH "$web_path"
+    restart_panel
+    echo -e "${GREEN}Секретный путь обновлен. Адрес: $(panel_url)${NC}"
+    sleep 2
+}
+
+regenerate_api_token() {
+    local token
+    token="awg_bot_api_token_$(openssl rand -hex 16)"
+    set_env TELEGRAM_API_TOKEN "$token"
+    set_env API_TOKEN "$token"
+    restart_panel
+    echo -e "${GREEN}Новый API токен для Telegram-бота: $token${NC}"
+    sleep 3
+}
+
+install_certbot_ip() {
+    local certbot_bin="/opt/blits-certbot/bin/certbot"
+    if [ -x "$certbot_bin" ] && "$certbot_bin" --version 2>/dev/null | grep -Eq 'certbot (5\.[4-9]|[6-9]\.)'; then
+        echo "$certbot_bin"
+        return
+    fi
+
+    echo -e "${YELLOW}Установка/обновление Certbot в изолированное окружение...${NC}"
+    apt_update >&2
+    apt_install python3 python3-venv python3-pip openssl curl >&2
+    python3 -m venv /opt/blits-certbot >&2
+    /opt/blits-certbot/bin/pip install --upgrade pip >&2
+    /opt/blits-certbot/bin/pip install --upgrade "certbot>=5.4" >&2
+    echo "$certbot_bin"
+}
+
+write_nginx_conf() {
+    local cert_name="$1"
+    local upstream_port="$2"
+    sed -e "s/__DOMAIN__/${cert_name}/g" -e "s/__PORT__/${upstream_port}/g" "$APP_DIR/nginx.conf.template" > "$APP_DIR/nginx.conf"
+}
+
+install_renew_hook() {
+    local certbot_bin="$1"
+    cat >/usr/local/bin/blits-renew-ip-cert <<EOF
+#!/usr/bin/env bash
+set -e
+cd "$APP_DIR"
+docker stop nginx-proxy >/dev/null 2>&1 || true
+"$certbot_bin" renew --quiet
+$DOCKER_COMPOSE_CMD --profile ssl up -d nginx-proxy
+EOF
+    chmod 0755 /usr/local/bin/blits-renew-ip-cert
+    cat >/etc/cron.d/blits-ip-cert-renew <<'EOF'
+17 */12 * * * root /usr/local/bin/blits-renew-ip-cert >/var/log/blits-renew-ip-cert.log 2>&1
+EOF
+}
+
+enable_ip_https() {
+    local ip email certbot_bin
+    ip="$(public_ip)"
+    read -rp "IP адрес для выпуска сертификата [$ip]: " input_ip
+    ip="${input_ip:-$ip}"
+    read -rp "Email для уведомлений Let's Encrypt (пусто = без почты): " email
+
+    certbot_bin="$(install_certbot_ip)"
+    set_env PANEL_PORT "1010"
+    set_env PANEL_HTTPS "1"
+    set_env PANEL_CERT_NAME "$ip"
+    set_env PANEL_DOMAIN ""
+    write_nginx_conf "$ip" "1010"
+
+    echo -e "${YELLOW}Остановка временных портов для выпуска сертификата...${NC}"
+    docker stop nginx-proxy >/dev/null 2>&1 || true
+    docker stop amnezia-panel >/dev/null 2>&1 || true
+    systemctl stop nginx >/dev/null 2>&1 || true
+
+    if [ -n "$email" ]; then
+        "$certbot_bin" certonly --preferred-profile shortlived --standalone --ip-address "$ip" --cert-name "$ip" --non-interactive --agree-tos --email "$email"
+    else
+        "$certbot_bin" certonly --preferred-profile shortlived --standalone --ip-address "$ip" --cert-name "$ip" --non-interactive --agree-tos --register-unsafely-without-email
+    fi
+
+    install_renew_hook "$certbot_bin"
+    restart_panel
+    echo -e "${GREEN}Сертификат успешно настроен! HTTPS адрес: $(panel_url)${NC}"
+    sleep 3
+}
+
+change_admin_password() {
+    read -rsp "Новый пароль администратора: " pass1
+    echo
+    read -rsp "Повторите новый пароль: " pass2
+    echo
+    if [ "$pass1" != "$pass2" ]; then
+        echo -e "${RED}Пароли не совпадают.${NC}"
+        sleep 2
+        return
+    fi
+    if [ "${#pass1}" -lt 6 ]; then
+        echo -e "${RED}Пароль слишком короткий (минимум 6 символов).${NC}"
+        sleep 2
+        return
+    fi
+    
+    echo -e "${YELLOW}Хеширование и обновление пароля...${NC}"
+    docker exec -i amnezia-panel python3 - <<'PY' <<< "$pass1"
+import sys, sqlite3, bcrypt
+password = sys.stdin.read().strip().encode('utf-8')
+if password:
+    hashed = bcrypt.hashpw(password, bcrypt.gensalt()).decode('utf-8')
+    conn = sqlite3.connect('/app/data/panel.db')
+    conn.execute("update users set password_hash = ?, must_change_password = 0 where username = 'admin'", (hashed,))
+    conn.commit()
+    conn.close()
+PY
+    echo -e "${GREEN}Пароль успешно обновлен.${NC}"
+    sleep 2
+}
+
+diagnostics_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "🛠️                       ${BOLD}ДИАГНОСТИКА И ЛОГИ СЕРВЕРА${NC}                     🛠️"
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "  ${BOLD}1)${NC} Просмотр живых логов панели (docker logs amnezia-panel)"
+        echo -e "  ${BOLD}2)${NC} Просмотр логов прокси (docker logs nginx-proxy)"
+        echo -e "  ${BOLD}3)${NC} Просмотр активных VPN соединений (wg / awg show)"
+        echo -e "  ${BOLD}4)${NC} Проверка занятости портов панели на сервере"
+        echo -e "  ${BOLD}0)${NC} Назад в главное меню"
+        echo -e "${CYAN}=========================================================================${NC}"
+        
+        read -rp "Выберите действие: " choice
+        case "$choice" in
+            1)
+                echo -e "${YELLOW}Отображение логов. Нажмите Ctrl+C для выхода...${NC}"
+                sleep 1
+                docker logs -f amnezia-panel --tail 100 || true
+                ;;
+            2)
+                if docker ps -a --format '{{.Names}}' | grep -q 'nginx-proxy'; then
+                    echo -e "${YELLOW}Отображение логов. Нажмите Ctrl+C для выхода...${NC}"
+                    sleep 1
+                    docker logs -f nginx-proxy --tail 100 || true
+                else
+                    echo -e "${RED}Nginx proxy контейнер не запущен (HTTPS не используется).${NC}"
+                    read -rp "Нажмите Enter для продолжения..."
+                fi
+                ;;
+            3)
+                echo -e "\n${BOLD}--- АКТИВНЫЕ ИНТЕРФЕЙСЫ И СЕССИИ VPN ---${NC}"
+                if command -v awg >/dev/null 2>&1; then
+                    awg show || true
+                elif command -v wg >/dev/null 2>&1; then
+                    wg show || true
+                else
+                    echo -e "${YELLOW}Пытаемся получить wg show из контейнера панели...${NC}"
+                    docker exec amnezia-panel wg show || true
+                fi
+                read -rp "Нажмите Enter для продолжения..."
+                ;;
+            4)
+                check_ports
+                read -rp "Нажмите Enter для продолжения..."
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Неизвестная опция.${NC}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+check_ports() {
+    echo -e "${YELLOW}Проверка конфликтов портов...${NC}"
+    local panel_port
+    panel_port="$(get_env PANEL_PORT)"
+    panel_port="${panel_port:-80}"
+    
+    echo "Заданный порт панели: $panel_port"
+    if command -v ss >/dev/null 2>&1; then
+        ss -tulnp | grep -E ":$panel_port\s" || echo -e "${GREEN}Порт $panel_port свободен на уровне хоста.${NC}"
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -tulnp | grep -E ":$panel_port\s" || echo -e "${GREEN}Порт $panel_port свободен на уровне хоста.${NC}"
+    else
+        echo -e "${YELLOW}Команда ss/netstat не найдена. Пробуем lsof...${NC}"
+        if command -v lsof >/dev/null 2>&1; then
+            lsof -i ":$panel_port" || echo -e "${GREEN}Порт $panel_port свободен.${NC}"
+        else
+            echo "Нет инструментов для диагностики портов. Установите net-tools или iproute2."
+        fi
+    fi
+}
+
+enable_bbr() {
+    echo -e "${YELLOW}Включение оптимизации сети BBR Congestion Control...${NC}"
+    if sysctl net.ipv4.tcp_congestion_control | grep -q bbr; then
+        echo -e "${GREEN}Алгоритм BBR уже активирован на сервере!${NC}"
+        return
+    fi
+    
+    if ! modprobe tcp_bbr 2>/dev/null; then
+        echo -e "${RED}Ошибка: модуль tcp_bbr не поддерживается ядром вашего сервера.${NC}"
+        return
+    fi
+    
+    echo "tcp_bbr" | tee /etc/modules-load.d/bbr.conf >/dev/null
+    
+    sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+    sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+    
+    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+    
+    sysctl -p >/dev/null
+    
+    if sysctl net.ipv4.tcp_congestion_control | grep -q bbr; then
+        echo -e "${GREEN}Оптимизация BBR успешно включена! VPN будет работать стабильнее и быстрее.${NC}"
+    else
+        echo -e "${RED}Не удалось применить параметры sysctl для BBR.${NC}"
+    fi
+}
+
+backup_db() {
+    local backup_dir="$APP_DIR/backups"
+    mkdir -p "$backup_dir"
+    local timestamp
+    timestamp=$(date +"%Y%m%d_%H%M%S")
+    local backup_file="$backup_dir/blits_backup_$timestamp.tar.gz"
+    
+    echo -e "${YELLOW}Создание резервной копии базы данных и env...${NC}"
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    mkdir -p "$tmp_dir/data" "$tmp_dir/vpn"
+    [ -f "$APP_DIR/data/panel.db" ] && cp -a "$APP_DIR/data/panel.db" "$tmp_dir/data/panel.db"
+    [ -f "$APP_DIR/data/panel.env" ] && cp -a "$APP_DIR/data/panel.env" "$tmp_dir/data/panel.env"
+    if [ -d "/etc/amnezia/amneziawg" ]; then
+        find /etc/amnezia/amneziawg -maxdepth 1 -type f \( -name '*.conf' -o -name '*.key' -o -name '*.pub' \) -exec cp -a {} "$tmp_dir/vpn/" \; 2>/dev/null || true
+    fi
+    tar -czf "$backup_file" -C "$tmp_dir" . 2>/dev/null
+    rm -rf "$tmp_dir"
+    
+    if [ -f "$backup_file" ]; then
+        echo -e "${GREEN}Резервная копия создана: $backup_file${NC}"
+    else
+        echo -e "${RED}Ошибка при создании резервной копии.${NC}"
+    fi
+}
+
+restore_db() {
+    local backup_dir="$APP_DIR/backups"
+    if [ ! -d "$backup_dir" ] || [ -z "$(ls -A "$backup_dir" 2>/dev/null)" ]; then
+        echo -e "${RED}Резервные копии не найдены в папке $backup_dir${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}Доступные резервные копии:${NC}"
+    local idx=1
+    declare -A backup_files
+    for file in "$backup_dir"/blits_backup_*.tar.gz; do
+        if [ -f "$file" ]; then
+            echo "$idx) $(basename "$file")"
+            backup_files[$idx]="$file"
+            idx=$((idx + 1))
+        fi
+    done
+    
+    read -rp "Выберите номер бэкапа для восстановления (0 для отмены): " choice
+    if [ "$choice" -eq 0 ] 2>/dev/null; then
+        echo "Отмена."
+        return
+    fi
+    
+    local selected="${backup_files[$choice]:-}"
+    if [ -z "$selected" ]; then
+        echo -e "${RED}Неверный номер.${NC}"
+        return
+    fi
+    
+    read -rp "Вы уверены? Это перезапишет текущую базу и настройки! (y/n): " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        echo "Отмена."
+        return
+    fi
+    
+    echo -e "${YELLOW}Восстановление базы данных...${NC}"
+    docker stop amnezia-panel >/dev/null 2>&1 || true
+    
+    tar -xzf "$selected" -C "$APP_DIR"
+    if [ -d "$APP_DIR/vpn" ]; then
+        mkdir -p /etc/amnezia/amneziawg
+        cp -a "$APP_DIR/vpn/." /etc/amnezia/amneziawg/ 2>/dev/null || true
+        chmod 600 /etc/amnezia/amneziawg/* 2>/dev/null || true
+        rm -rf "$APP_DIR/vpn"
+    fi
+    
+    restart_panel
+    echo -e "${GREEN}База данных успешно восстановлена, панель перезапущена!${NC}"
+}
+
+optimize_db() {
+    echo -e "${YELLOW}Оптимизация и сжатие базы данных SQLite...${NC}"
+    if run_py counts >/dev/null; then
+        docker exec -i amnezia-panel python3 - <<'PY'
+import sqlite3
+try:
+    conn = sqlite3.connect('/app/data/panel.db')
+    conn.execute("VACUUM")
+    conn.execute("PRAGMA optimize")
+    conn.commit()
+    conn.close()
+    print("База данных успешно сжата и оптимизирована!")
+except Exception as e:
+    print(f"Ошибка оптимизации: {e}")
+PY
+    else
+        echo -e "${RED}Ошибка: контейнер выключен. Невозможно оптимизировать БД.${NC}"
+    fi
+}
+
+backups_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "💾              ${BOLD}БЭКАПЫ, ОПТИМИЗАЦИЯ И СЕТЕВОЙ ТЮНИНГ${NC}                   💾"
+        echo -e "${CYAN}=========================================================================${NC}"
+        echo -e "  ${BOLD}1)${NC} Создать резервную копию базы данных и настроек"
+        echo -e "  ${BOLD}2)${NC} Восстановить базу данных из бэкапа"
+        echo -e "  ${BOLD}3)${NC} Очистить/Сжать базу данных (SQLite VACUUM)"
+        echo -e "  ${BOLD}4)${NC} Включить ускорение сети BBR (для высокой скорости VPN)"
+        echo -e "  ${BOLD}0)${NC} Назад в главное меню"
+        echo -e "${CYAN}=========================================================================${NC}"
+        
+        read -rp "Выберите действие: " choice
+        case "$choice" in
+            1) backup_db ; read -rp "Нажмите Enter для продолжения..." ;;
+            2) restore_db ; read -rp "Нажмите Enter для продолжения..." ;;
+            3) optimize_db ; read -rp "Нажмите Enter для продолжения..." ;;
+            4) enable_bbr ; read -rp "Нажмите Enter для продолжения..." ;;
+            0) return ;;
+            *) echo -e "${RED}Неизвестное действие.${NC}" ; sleep 1 ;;
+        esac
+    done
+}
+
+menu() {
+    while true; do
+        show_dashboard
+        read -rp "Выберите пункт меню: " choice
+        case "$choice" in
+            1) show_status_detailed ;;
+            2) show_access_links ;;
+            3) client_manager_menu ;;
+            4) network_settings_menu ;;
+            5) change_admin_password ;;
+            6) enable_ip_https ;;
+            7) diagnostics_menu ;;
+            8) backups_menu ;;
+            9) restart_panel ;;
+            0) exit 0 ;;
+            *) echo -e "${RED}Неизвестный пункт меню.${NC}" ; sleep 1 ;;
+        esac
+    done
+}
+
+require_root
+ensure_env
+menu

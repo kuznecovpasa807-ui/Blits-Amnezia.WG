@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Blitz Panel">
+  <rect width="64" height="64" rx="12" fill="#111827"/>
+  <path d="M39 6 17 35h14l-6 23 22-31H34l5-21Z" fill="#8b5cf6"/>
+  <path d="M31 9 18 35h11l-8 18 19-27H29l2-17Z" fill="#f8fafc" opacity=".92"/>
+</svg>
