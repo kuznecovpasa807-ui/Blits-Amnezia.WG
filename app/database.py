@@ -99,7 +99,7 @@ def init_db():
         # Хешируем стандартный пароль "admin" с помощью native bcrypt
         hashed_password = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode("utf-8")
         cursor.execute(
-            "INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (username, password_hash, must_change_password) VALUES (?, ?, ?)",
             ("admin", hashed_password, 1)
         )
 
