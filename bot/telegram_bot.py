@@ -56,6 +56,10 @@ HEADERS = {
 
 http = httpx.AsyncClient(base_url=PANEL_URL, headers=HEADERS, timeout=30.0)
 
+def has_real_bot_token() -> bool:
+    token = BOT_TOKEN.strip()
+    return bool(token and ":" in token and not token.startswith("awg_bot_api_token_"))
+
 # ─── FSM-состояния ───────────────────────────────────────────────────────────
 
 class CreateClient(StatesGroup):
@@ -1263,6 +1267,11 @@ async def main():
     log.info("🚀 Запуск Blits VPN Manager Bot...")
     log.info(f"📡 Panel URL: {PANEL_URL}")
     log.info(f"🔑 Admin IDs: {ADMIN_IDS or 'ALL (no restriction)'}")
+
+    if not has_real_bot_token():
+        log.info("Telegram bot is disabled: BOT_TOKEN is not configured.")
+        await http.aclose()
+        await asyncio.Event().wait()
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
