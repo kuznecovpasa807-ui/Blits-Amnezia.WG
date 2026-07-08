@@ -10,6 +10,7 @@ import io
 import zipfile
 import shutil
 import shlex
+import secrets
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, status, UploadFile, File
 from fastapi.templating import Jinja2Templates
@@ -170,8 +171,14 @@ def _vpn_config_checks() -> list[dict]:
         })
     return checks
 
-def _bool_check(name: str, ok: bool, good: str, bad: str) -> dict:
-    return {"name": name, "ok": bool(ok), "message": good if ok else bad}
+def _bool_check(name: str, ok: bool, good: str, bad: str, action_url: str = "", action_label: str = "Настроить") -> dict:
+    return {
+        "name": name,
+        "ok": bool(ok),
+        "message": good if ok else bad,
+        "action_url": action_url,
+        "action_label": action_label,
+    }
 
 def _client_health_checks(client: dict) -> list[dict]:
     connection_statuses = get_client_connection_statuses()
@@ -253,12 +260,12 @@ def _security_checks(user: dict) -> list[dict]:
     if cert_exists:
         https_message = "сертификат найден и HTTPS включен"
     return [
-        _bool_check("HTTPS", https_enabled, https_message, "HTTPS выключен"),
-        _bool_check("Секретный web path", bool(web_path and web_path != "/"), web_path or "не задан", "секретный путь не задан"),
-        _bool_check("Пароль администратора", not default_password and not user.get("must_change_password"), "пароль не стандартный", "нужно сменить admin/admin"),
-        _bool_check("API token", len(api_token) >= 24, "токен задан", "токен пустой или слишком короткий"),
-        _bool_check("Порт панели", str(panel_port) not in {"80", "8080"}, f"порт {panel_port}", "лучше использовать нестандартный порт за HTTPS/proxy"),
-        _bool_check("Домен панели", bool(panel_domain), panel_domain or "домен не задан", "домен не задан, используется IP"),
+        _bool_check("HTTPS", https_enabled, https_message, "HTTPS выключен", "/settings/panel#panel-access"),
+        _bool_check("Секретный web path", bool(web_path and web_path != "/"), web_path or "не задан", "секретный путь не задан", "/settings/panel#security-actions"),
+        _bool_check("Пароль администратора", not default_password and not user.get("must_change_password"), "пароль не стандартный", "нужно сменить admin/admin", "/settings/password"),
+        _bool_check("API token", len(api_token) >= 24, "токен задан", "токен пустой или слишком короткий", "/settings/panel#security-actions"),
+        _bool_check("Порт панели", str(panel_port) not in {"80", "8080"}, f"порт {panel_port}", "лучше использовать нестандартный порт за HTTPS/proxy", "/settings/panel#panel-access"),
+        _bool_check("Домен панели", bool(panel_domain), panel_domain or "домен не задан", "домен не задан, используется IP", "/settings/panel#panel-access"),
     ]
 
 def _panel_update_info() -> dict:
@@ -338,6 +345,14 @@ def _write_panel_env(values: dict[str, str]):
 
 def write_panel_env(port: str):
     _write_panel_env({"PANEL_PORT": port})
+
+
+def generate_web_path() -> str:
+    return f"/blits-{secrets.token_hex(16)}"
+
+
+def generate_api_token() -> str:
+    return f"awg_bot_api_token_{secrets.token_hex(16)}"
 
 def restart_panel_service_later(delay_seconds: float = 1.0):
     def _restart():
@@ -1640,6 +1655,8 @@ async def panel_settings_page(
     settings = {
         "panel_port": get_panel_setting("panel_port", os.getenv("PANEL_PORT", "8080")),
         "panel_domain": get_panel_setting("panel_domain", ""),
+        "panel_web_path": os.getenv("PANEL_WEB_PATH", ""),
+        "api_token": os.getenv("TELEGRAM_API_TOKEN") or os.getenv("API_TOKEN") or "",
         "panel_theme": get_panel_setting("panel_theme", request.cookies.get("panel_theme", "light")),
         "panel_language": get_panel_setting("panel_language", request.cookies.get("panel_lang", "ru")),
         "telegram_notifications_enabled": get_panel_setting("telegram_notifications_enabled", "0"),
@@ -1688,6 +1705,8 @@ async def save_panel_settings(
     settings = {
         "panel_port": port_value,
         "panel_domain": domain_value,
+        "panel_web_path": os.getenv("PANEL_WEB_PATH", ""),
+        "api_token": os.getenv("TELEGRAM_API_TOKEN") or os.getenv("API_TOKEN") or "",
         "panel_theme": theme_value,
         "panel_language": language_value,
         "telegram_notifications_enabled": telegram_enabled_value,
@@ -1709,6 +1728,30 @@ async def save_panel_settings(
     response.set_cookie("panel_theme", theme_value, max_age=60 * 60 * 24 * 365, samesite="lax")
     response.set_cookie("panel_lang", language_value, max_age=60 * 60 * 24 * 365, samesite="lax")
     return response
+
+
+@router.post("/settings/panel/web-path/regenerate")
+async def regenerate_panel_web_path(user: dict = Depends(check_password_change_required)):
+    web_path = generate_web_path()
+    _write_panel_env({"PANEL_WEB_PATH": web_path})
+    os.environ["PANEL_WEB_PATH"] = web_path
+    log_event("panel_web_path_regenerated", "Секретный web path панели перегенерирован.", meta={"web_path": web_path})
+    return JSONResponse({"status": "ok", "web_path": web_path})
+
+
+@router.post("/settings/panel/api-token/regenerate")
+async def regenerate_panel_api_token(user: dict = Depends(check_password_change_required)):
+    api_token = generate_api_token()
+    _write_panel_env({"TELEGRAM_API_TOKEN": api_token, "API_TOKEN": api_token})
+    os.environ["TELEGRAM_API_TOKEN"] = api_token
+    os.environ["API_TOKEN"] = api_token
+    try:
+        import app.auth as auth_module
+        auth_module.TELEGRAM_API_TOKEN = api_token
+    except Exception:
+        pass
+    log_event("panel_api_token_regenerated", "API token панели перегенерирован.")
+    return JSONResponse({"status": "ok", "api_token": api_token})
 
 
 @router.post("/settings/panel/theme")

@@ -357,7 +357,13 @@
                                     <strong>{{ check.name }}</strong>
                                     <div class="client-subtext">{{ check.message }}</div>
                                 </div>
-                                <span class="badge {% if check.ok %}badge-success{% else %}badge-danger{% endif %}">{% if check.ok %}OK{% else %}Проверить{% endif %}</span>
+                                {% if check.ok %}
+                                <span class="badge badge-success">OK</span>
+                                {% elif check.action_url %}
+                                <a class="badge badge-danger badge-action" href="{{ check.action_url }}"><i class="fa-solid fa-wrench"></i> Проверить</a>
+                                {% else %}
+                                <span class="badge badge-danger">Проверить</span>
+                                {% endif %}
                             </div>
                             {% endfor %}
                         </div>

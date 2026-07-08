@@ -73,7 +73,7 @@
                 </div>
                 {% endif %}
 
-                <form action="/settings/panel" method="post" class="content-card" style="max-width: 760px;">
+                <form id="panel-access" action="/settings/panel" method="post" class="content-card" style="max-width: 760px;">
                     <div class="card-header">
                         <h2 class="card-title"><i class="fa-solid fa-window-maximize"></i> Доступ к веб-панели</h2>
                     </div>
@@ -86,6 +86,29 @@
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="panel_domain">Домен панели <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(только чтение)</span></label>
                                 <input type="text" id="panel_domain" class="form-control" value="{{ settings.panel_domain }}" readonly style="background: var(--bg-secondary); cursor: not-allowed; opacity: 0.8;" placeholder="не привязан">
+                            </div>
+                        </div>
+
+                        <div id="security-actions" style="padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary);">
+                            <h3 class="card-title" style="margin-bottom: 14px;"><i class="fa-solid fa-shield-halved"></i> Быстрые действия безопасности</h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
+                                <div style="display: flex; flex-direction: column; gap: 10px;">
+                                    <div>
+                                        <strong>Секретный web path</strong>
+                                        <div class="client-subtext" id="currentWebPath">{{ settings.panel_web_path or 'не задан' }}</div>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="regenerateWebPath()"><i class="fa-solid fa-rotate"></i> Перегенерировать web path</button>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 10px;">
+                                    <div>
+                                        <strong>API token</strong>
+                                        <div class="client-subtext" id="currentApiToken">{% if settings.api_token %}задан{% else %}не задан{% endif %}</div>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="regenerateApiToken()"><i class="fa-solid fa-key"></i> Перегенерировать API token</button>
+                                </div>
+                            </div>
+                            <div class="client-subtext" style="margin-top: 12px;">
+                                HTTPS, порт и домен меняются через серверное меню <code>blits</code>, чтобы панель не отрезала текущий браузер от доступа.
                             </div>
                         </div>
 
@@ -158,6 +181,53 @@
         </main>
     </div>
     <script>
+        async function postPanelAction(url) {
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+            return response.json();
+        }
+
+        async function regenerateWebPath() {
+            if (!confirm('Перегенерировать секретный web path? Старый адрес панели перестанет открываться.')) return;
+            try {
+                const result = await postPanelAction('/settings/panel/web-path/regenerate');
+                const webPath = result.web_path || '';
+                const label = document.getElementById('currentWebPath');
+                if (label) label.textContent = webPath;
+                if (webPath) {
+                    window.location.href = `${webPath}/settings/panel#security-actions`;
+                }
+            } catch (error) {
+                alert('Не удалось перегенерировать web path');
+                console.warn(error);
+            }
+        }
+
+        async function regenerateApiToken() {
+            if (!confirm('Перегенерировать API token? Старый токен перестанет работать для интеграций.')) return;
+            try {
+                await postPanelAction('/settings/panel/api-token/regenerate');
+                const label = document.getElementById('currentApiToken');
+                if (label) label.textContent = 'перегенерирован';
+            } catch (error) {
+                alert('Не удалось перегенерировать API token');
+                console.warn(error);
+            }
+        }
+
+        if (window.location.hash) {
+            const target = document.querySelector(window.location.hash);
+            if (target) {
+                target.style.boxShadow = '0 0 0 3px rgba(79, 110, 247, 0.18)';
+                setTimeout(() => { target.style.boxShadow = ''; }, 2200);
+            }
+        }
+
         document.querySelectorAll('[data-theme-choice]').forEach((input) => {
             input.addEventListener('change', async () => {
                 if (!input.checked) return;

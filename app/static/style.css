@@ -422,6 +422,20 @@ body {
     color: var(--danger);
 }
 
+.badge-action {
+    gap: 6px;
+    border: 0;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.badge-action:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(239, 68, 68, 0.16);
+    text-decoration: none;
+}
+
 .badge-warning {
     background-color: rgba(245, 158, 11, 0.1);
     color: var(--warning);
