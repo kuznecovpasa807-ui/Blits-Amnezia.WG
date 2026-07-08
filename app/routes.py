@@ -7,10 +7,13 @@ import subprocess
 import threading
 import time
 import io
+import json
 import zipfile
 import shutil
 import shlex
 import secrets
+import sys
+import urllib.request
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, status, UploadFile, File
 from fastapi.templating import Jinja2Templates
@@ -35,7 +38,7 @@ from app.vpn_manager import (
     generate_client_config, generate_legacy_client_config, generate_preshared_key,
     format_bytes, generate_awg_stealth_profile, get_client_connection_statuses,
     get_clients_traffic_usage, get_dashboard_stats, get_reconcile_report, get_sync_statuses,
-    get_split_tunnel_routes, get_split_tunnel_routes_text, refresh_client_traffic_usage,
+    get_split_tunnel_routes, get_split_tunnel_routes_text, get_vpn_setting, refresh_client_traffic_usage,
     rebuild_and_sync_vpn_config, set_split_tunnel_routes_text, enforce_expired_clients
 )
 from app.deeplink import generate_amnezia_deeplink, generate_amnezia_payload
@@ -52,9 +55,12 @@ SPLIT_TUNNEL_PRESETS = {
     "Telegram": ["telegram.org", "t.me", "tdesktop.com"],
     "Discord": ["discord.com", "discordapp.com", "discord.gg"],
     "YouTube": ["youtube.com", "youtu.be", "googlevideo.com", "ytimg.com"],
+    "Google domains": ["google.com", "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "gstatic.com", "ggpht.com"],
     "OpenAI": ["openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com"],
     "Cloudflare": ["1.1.1.1/32", "1.0.0.1/32", "cloudflare.com"],
 }
+
+GOOGLE_IP_RANGES_URL = "https://www.gstatic.com/ipranges/goog.json"
 
 # Вспомогательная функция для форматирования дат в шаблонах Jinja
 def format_datetime(value: str) -> str:
@@ -354,6 +360,50 @@ def generate_web_path() -> str:
 def generate_api_token() -> str:
     return f"awg_bot_api_token_{secrets.token_hex(16)}"
 
+
+def fetch_google_ip_ranges() -> dict:
+    req = urllib.request.Request(GOOGLE_IP_RANGES_URL, headers={"User-Agent": "Blits-AmneziaWG/1.0"})
+    with urllib.request.urlopen(req, timeout=15) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    routes = []
+    for item in data.get("prefixes", []):
+        route = item.get("ipv4Prefix") or item.get("ipv6Prefix")
+        if route and route not in routes:
+            routes.append(route)
+    return {
+        "routes": routes,
+        "syncToken": data.get("syncToken", ""),
+        "creationTime": data.get("creationTime", ""),
+        "source": GOOGLE_IP_RANGES_URL,
+    }
+
+
+def refresh_local_client_split_configs() -> int:
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT id, ip_address, private_key, preshared_key, route_type FROM clients WHERE deleted_at IS NULL"
+    ).fetchall()
+    updated = 0
+    try:
+        for row in rows:
+            if row["route_type"] == "cascade" or not row["private_key"] or str(row["ip_address"]).startswith("cascade:"):
+                continue
+            split_v2 = generate_client_config(
+                row["ip_address"], row["private_key"], split_tunnel=True, preshared_key=row["preshared_key"] or ""
+            )
+            split_legacy = generate_legacy_client_config(
+                row["ip_address"], row["private_key"], split_tunnel=True, preshared_key=row["preshared_key"] or ""
+            )
+            conn.execute(
+                "UPDATE clients SET config_text_split_v2 = ?, config_text_split_legacy = ? WHERE id = ?",
+                (split_v2, split_legacy, row["id"]),
+            )
+            updated += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return updated
+
 def restart_panel_service_later(delay_seconds: float = 1.0):
     def _restart():
         time.sleep(delay_seconds)
@@ -362,6 +412,29 @@ def restart_panel_service_later(delay_seconds: float = 1.0):
             subprocess.run(["systemctl", "restart", "amnezia-panel"], check=False)
         except Exception as exc:
             logger.error(f"Не удалось перезапустить сервис панели: {exc}")
+    threading.Thread(target=_restart, daemon=True).start()
+
+
+def restart_panel_process_later(port: str, delay_seconds: float = 1.5):
+    def _restart():
+        time.sleep(delay_seconds)
+        env = os.environ.copy()
+        env["PANEL_PORT"] = str(port)
+        argv = [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(port),
+        ]
+        try:
+            os.execvpe(sys.executable, argv, env)
+        except Exception as exc:
+            logger.error(f"Не удалось перезапустить процесс панели на порту {port}: {exc}")
+
     threading.Thread(target=_restart, daemon=True).start()
 
 # --- СТАТИЧЕСКИЙ ДОСТУП ДЛЯ КЛИЕНТОВ (Скачивание файлов без авторизации по UUID) ---
@@ -1416,6 +1489,17 @@ async def vpn_settings_page(
         }
     )
 
+
+@router.get("/settings/vpn/google-routes")
+async def google_split_routes(user: dict = Depends(check_password_change_required)):
+    try:
+        data = fetch_google_ip_ranges()
+        return JSONResponse(data)
+    except Exception as exc:
+        logger.error(f"Не удалось получить Google IP ranges: {exc}")
+        raise HTTPException(status_code=502, detail="Не удалось получить официальный список Google IP ranges")
+
+
 @router.post("/settings/vpn", response_class=HTMLResponse)
 async def save_vpn_settings(
     request: Request,
@@ -1496,10 +1580,11 @@ async def save_vpn_settings(
         set_vpn_setting("legacy_h3", legacy_h3.strip())
         set_vpn_setting("legacy_h4", legacy_h4.strip())
         set_split_tunnel_routes_text(split_tunnel_routes)
+        refreshed_clients = refresh_local_client_split_configs()
         
         # Пересборка конфигов сервера и перезапуск интерфейса VPN
         rebuild_and_sync_vpn_config()
-        log_event("settings_vpn_updated", "Настройки VPN и AmneziaWG обновлены.", meta={"port": port_value, "legacy_port": legacy_port_value})
+        log_event("settings_vpn_updated", "Настройки VPN и AmneziaWG обновлены.", meta={"port": port_value, "legacy_port": legacy_port_value, "refreshed_clients": refreshed_clients})
         success_msg = "Настройки успешно сохранены!"
         error_msg = None
     except Exception as e:
@@ -1677,6 +1762,8 @@ async def panel_settings_page(
 @router.post("/settings/panel", response_class=HTMLResponse)
 async def save_panel_settings(
     request: Request,
+    panel_port: str = Form(""),
+    panel_domain: str = Form(""),
     telegram_notifications_enabled: str = Form("0"),
     telegram_admin_bot_token: str = Form(""),
     telegram_admin_chat_id: str = Form(""),
@@ -1684,22 +1771,49 @@ async def save_panel_settings(
 ):
     success_msg = None
     error_msg = None
-    port_value = get_panel_setting("panel_port", os.getenv("PANEL_PORT", "8080"))
-    domain_value = get_panel_setting("panel_domain", "")
+    current_port_value = get_panel_setting("panel_port", os.getenv("PANEL_PORT", "8080"))
+    port_value = (panel_port or current_port_value).strip()
+    domain_value = panel_domain.strip()
     theme_value = get_panel_setting("panel_theme", request.cookies.get("panel_theme", "light"))
     language_value = get_panel_setting("panel_language", request.cookies.get("panel_lang", "ru"))
     telegram_enabled_value = "1" if telegram_notifications_enabled == "1" else "0"
     telegram_token_value = telegram_admin_bot_token.strip()
     telegram_chat_id_value = telegram_admin_chat_id.strip()
+    panel_restart_url = ""
 
     try:
+        port_value = _validated_int_setting("порт панели", port_value, 1, 65535)
+        reserved_ports = {
+            "22",
+            get_vpn_setting("port", str(AWG_PORT)),
+            get_vpn_setting("legacy_port", "43913"),
+        }
+        if port_value in reserved_ports:
+            raise ValueError("Этот порт уже используется SSH или VPN. Выберите другой TCP-порт для панели.")
+        if domain_value and not re.match(r"^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$", domain_value):
+            raise ValueError("Домен панели указан неверно.")
+
+        set_panel_setting("panel_port", port_value)
+        set_panel_setting("panel_domain", domain_value)
+        _write_panel_env({"PANEL_PORT": port_value, "PANEL_DOMAIN": domain_value})
+        os.environ["PANEL_PORT"] = port_value
+        os.environ["PANEL_DOMAIN"] = domain_value
         set_panel_setting("telegram_notifications_enabled", telegram_enabled_value)
         set_panel_setting("telegram_admin_bot_token", telegram_token_value)
         set_panel_setting("telegram_admin_chat_id", telegram_chat_id_value)
-        log_event("settings_telegram_updated", "Настройки Telegram уведомлений обновлены.", meta={"enabled": telegram_enabled_value})
-        success_msg = "Настройки Telegram сохранены."
+        log_event("settings_panel_updated", "Настройки панели обновлены.", meta={"port": port_value, "domain": domain_value, "telegram_enabled": telegram_enabled_value})
+        success_msg = "Настройки панели сохранены."
+        if port_value != current_port_value:
+            host = domain_value or request.url.hostname or SERVER_PUBLIC_IP
+            scheme = "https" if os.getenv("PANEL_HTTPS", "") == "1" else "http"
+            web_path = os.getenv("PANEL_WEB_PATH", "")
+            default_port = "443" if scheme == "https" else "80"
+            port_part = "" if port_value == default_port else f":{port_value}"
+            panel_restart_url = f"{scheme}://{host}{port_part}{web_path}/settings/panel"
+            success_msg = f"Порт панели сохранен. Панель перезапустится на порту {port_value}."
+            restart_panel_process_later(port_value)
     except Exception as e:
-        logger.error(f"Не удалось сохранить настройки Telegram: {e}")
+        logger.error(f"Не удалось сохранить настройки панели: {e}")
         error_msg = str(e)
 
     settings = {
@@ -1722,6 +1836,7 @@ async def save_panel_settings(
             "settings": settings,
             "success": success_msg,
             "error": error_msg,
+            "panel_restart_url": panel_restart_url,
             "current_page": "panel_settings"
         }
     )

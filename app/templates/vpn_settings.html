@@ -243,6 +243,9 @@
                                     <i class="fa-solid fa-plus"></i> {{ preset_name }}
                                 </button>
                                 {% endfor %}
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="addOfficialGoogleRoutes(this)">
+                                    <i class="fa-brands fa-google"></i> Google/YouTube IP
+                                </button>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="split_tunnel_routes">Список маршрутов и доменов</label>
@@ -268,6 +271,33 @@
         });
         textarea.value = current.join('\n');
         textarea.focus();
+    }
+
+    async function addOfficialGoogleRoutes(button) {
+        const textarea = document.getElementById('split_tunnel_routes');
+        const current = textarea.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+        const oldText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Google...';
+        try {
+            const response = await fetch('/settings/vpn/google-routes', { credentials: 'same-origin' });
+            if (!response.ok) throw new Error('bad response');
+            const data = await response.json();
+            let added = 0;
+            (data.routes || []).forEach((item) => {
+                if (!current.includes(item)) {
+                    current.push(item);
+                    added += 1;
+                }
+            });
+            textarea.value = current.join('\n');
+            textarea.focus();
+            button.innerHTML = `<i class="fa-solid fa-check"></i> Добавлено: ${added}`;
+            setTimeout(() => { button.innerHTML = oldText; button.disabled = false; }, 1800);
+        } catch (error) {
+            button.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Ошибка';
+            setTimeout(() => { button.innerHTML = oldText; button.disabled = false; }, 2200);
+        }
     }
 
     async function generateStealthProfile() {
