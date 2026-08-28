@@ -454,6 +454,18 @@ if ufw status | grep -q "Status: active"; then
     ufw reload
 fi
 
+echo -e "\n${BLUE}Финальная проверка установки...${NC}"
+if [ -f "./check_server.sh" ]; then
+    chmod +x ./check_server.sh
+    if bash ./check_server.sh --quick; then
+        echo -e "${GREEN}Проверка пройдена: панель и VPN-сервисы отвечают.${NC}"
+    else
+        echo -e "${YELLOW}Панель установлена, но self-check нашел проблему. Запустите подробную диагностику: bash ./check_server.sh${NC}"
+    fi
+else
+    echo -e "${YELLOW}check_server.sh не найден, финальная проверка пропущена.${NC}"
+fi
+
 # Вывод красивого финального баннера
 PUBLIC_IP=$(curl -s https://ifconfig.me || curl -s https://api.ipify.org)
 

@@ -4,3 +4,4 @@ Dockerfile text eol=lf
 docker-compose.yml text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+blits text eol=lf
