@@ -72,5 +72,5 @@ ENV PYTHONUNBUFFERED=1
 # Открываем порт для документации Docker
 EXPOSE 8080
 
-# Запускаем FastAPI через Uvicorn с динамическим портом
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PANEL_PORT}"]
+# Запускаем FastAPI через Uvicorn и перечитываем runtime-настройки панели при каждом старте
+CMD ["sh", "-c", "set -a; [ -f /app/data/panel.env ] && . /app/data/panel.env; set +a; uvicorn app.main:app --host 0.0.0.0 --port ${PANEL_PORT}"]

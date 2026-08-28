@@ -94,8 +94,9 @@
                             </h3>
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
                                 <div class="form-group" style="margin-bottom: 0;">
-                                    <label for="public_ip">Внешний IP сервера (Endpoint)</label>
-                                    <input type="text" id="public_ip" name="public_ip" class="form-control" value="{{ settings.public_ip }}" required placeholder="например, 1.2.3.4">
+                                    <label for="public_ip">Endpoint клиентов (IP или домен)</label>
+                                    <input type="text" id="public_ip" name="public_ip" class="form-control" value="{{ settings.public_ip }}" required placeholder="например, vpn.example.com или 1.2.3.4">
+                                    <div class="client-subtext" style="margin-top: 6px;">Для замены IP без перевыпуска ключей укажи здесь домен и меняй A-запись у домена.</div>
                                 </div>
                                 <div class="form-group" style="margin-bottom: 0;">
                                     <label for="port">UDP-порт Amnezia 2.0</label>
@@ -129,7 +130,7 @@
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 16px;">
                                 <div style="padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-main);">
-                                    <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--dark);">Amnezia 2.0</h4>
+                                    <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--dark);">AmneziaWG 3.1 / 2.0</h4>
                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px;">
                                     <div class="form-group" style="margin-bottom: 0;">
                                         <label for="jc">Jc</label>
@@ -176,6 +177,33 @@
                                     <div class="form-group" style="margin-bottom: 0;">
                                         <label for="h4">H4</label>
                                         <input type="text" id="h4" name="h4" class="form-control" value="{{ settings.h4 }}" required>
+                                    </div>
+                                </div>
+                                <div style="margin-top: 12px;">
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                                        I1-I5 используются AmneziaWG 3.1 для CPS-пакетов перед handshake. Можно оставить пустыми для режима ближе к 2.0.
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="i1">I1</label>
+                                            <textarea id="i1" name="i1" class="form-control" rows="2" spellcheck="false">{{ settings.i1 }}</textarea>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="i2">I2</label>
+                                            <textarea id="i2" name="i2" class="form-control" rows="2" spellcheck="false">{{ settings.i2 }}</textarea>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="i3">I3</label>
+                                            <textarea id="i3" name="i3" class="form-control" rows="2" spellcheck="false">{{ settings.i3 }}</textarea>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="i4">I4</label>
+                                            <textarea id="i4" name="i4" class="form-control" rows="2" spellcheck="false">{{ settings.i4 }}</textarea>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label for="i5">I5</label>
+                                            <textarea id="i5" name="i5" class="form-control" rows="2" spellcheck="false">{{ settings.i5 }}</textarea>
+                                        </div>
                                     </div>
                                 </div>
                                 </div>

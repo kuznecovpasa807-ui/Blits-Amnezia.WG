@@ -142,10 +142,12 @@ def _vpn_config_checks() -> list[dict]:
 
     port = get_vpn_setting("port", str(AWG_PORT))
     legacy_port = get_vpn_setting("legacy_port", "43913")
+    i_enabled = any(get_vpn_setting(f"i{index}", "") for index in range(1, 6))
     checks = [
         {"name": "Different UDP ports", "ok": port != legacy_port, "message": f"2.0: {port}, Legacy: {legacy_port}"},
         {"name": "Amnezia 2.0 UDP port", **_check_udp_port(port)},
         {"name": "Legacy UDP port", **_check_udp_port(legacy_port)},
+        {"name": "AmneziaWG 3.1 CPS I1-I5", "ok": i_enabled, "message": "I-пакеты включены" if i_enabled else "I1-I5 пустые, профиль ближе к 2.0"},
     ]
     legacy_text = LEGACY_CONFIG_FILE.read_text(errors="ignore") if LEGACY_CONFIG_FILE.exists() else ""
     checks.append({
@@ -216,10 +218,16 @@ def _client_health_checks(client: dict) -> list[dict]:
             "Legacy-конфиг содержит S3/S4",
         ),
         _bool_check(
-            "Amnezia 2.0 содержит S3/S4",
+            "AmneziaWG 2.0/3.1 содержит S3/S4",
             "S3 =" in v2_config and "S4 =" in v2_config,
-            "Amnezia 2.0-конфиг полный",
-            "В Amnezia 2.0-конфиге не хватает S3/S4",
+            "конфиг содержит параметры 2.0+",
+            "в конфиге не хватает S3/S4",
+        ),
+        _bool_check(
+            "AmneziaWG 3.1 CPS I1-I5",
+            any(f"I{i} =" in v2_config for i in range(1, 6)),
+            "I-пакеты включены",
+            "I1-I5 пустые, профиль ближе к 2.0",
         ),
         _bool_check(
             "Split-конфиг отличается от full",
@@ -1461,6 +1469,11 @@ async def vpn_settings_page(
         "s2": get_vpn_setting("s2", "34"),
         "s3": get_vpn_setting("s3", "21"),
         "s4": get_vpn_setting("s4", "2"),
+        "i1": get_vpn_setting("i1", ""),
+        "i2": get_vpn_setting("i2", ""),
+        "i3": get_vpn_setting("i3", ""),
+        "i4": get_vpn_setting("i4", ""),
+        "i5": get_vpn_setting("i5", ""),
         "h1": get_vpn_setting("h1", "906396796-1598714541"),
         "h2": get_vpn_setting("h2", "2056848576-2126223526"),
         "h3": get_vpn_setting("h3", "2141047196-2144456894"),
@@ -1514,6 +1527,11 @@ async def save_vpn_settings(
     s2: str = Form(...),
     s3: str = Form("21"),
     s4: str = Form("2"),
+    i1: str = Form(""),
+    i2: str = Form(""),
+    i3: str = Form(""),
+    i4: str = Form(""),
+    i5: str = Form(""),
     h1: str = Form(...),
     h2: str = Form(...),
     h3: str = Form(...),
@@ -1543,6 +1561,16 @@ async def save_vpn_settings(
         s2_value = _validated_int_setting("S2", s2, 0, 1000)
         s3_value = _validated_int_setting("S3", s3, 0, 1000)
         s4_value = _validated_int_setting("S4", s4, 0, 1000)
+        i_values = {
+            "i1": i1.strip(),
+            "i2": i2.strip(),
+            "i3": i3.strip(),
+            "i4": i4.strip(),
+            "i5": i5.strip(),
+        }
+        for key, value in i_values.items():
+            if len(value) > 2000:
+                raise ValueError(f"{key.upper()} слишком длинный")
         legacy_jc_value = _validated_int_setting("Legacy Jc", legacy_jc, 0, 100)
         legacy_jmin_value = _validated_int_setting("Legacy Jmin", legacy_jmin, 0, 1200)
         legacy_jmax_value = _validated_int_setting("Legacy Jmax", legacy_jmax, 0, 1200)
@@ -1566,6 +1594,8 @@ async def save_vpn_settings(
         set_vpn_setting("s2", s2_value)
         set_vpn_setting("s3", s3_value)
         set_vpn_setting("s4", s4_value)
+        for key, value in i_values.items():
+            set_vpn_setting(key, value)
         set_vpn_setting("h1", h1.strip())
         set_vpn_setting("h2", h2.strip())
         set_vpn_setting("h3", h3.strip())
@@ -1604,6 +1634,11 @@ async def save_vpn_settings(
         "s2": s2,
         "s3": s3,
         "s4": s4,
+        "i1": i1,
+        "i2": i2,
+        "i3": i3,
+        "i4": i4,
+        "i5": i5,
         "h1": h1,
         "h2": h2,
         "h3": h3,

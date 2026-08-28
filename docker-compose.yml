@@ -25,6 +25,8 @@ services:
       context: ./bot
       dockerfile: Dockerfile
     container_name: blits-bot
+    profiles:
+      - bot
     restart: always
     network_mode: host
     environment:

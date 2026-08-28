@@ -106,6 +106,11 @@ def generate_awg_stealth_profile(include_v2_params: bool = True) -> dict:
     if include_v2_params:
         profile["s3"] = s_values[2]
         profile["s4"] = s_values[3]
+        profile["i1"] = f"<b 0x{secrets.token_hex(16)}><t><r {_rand_range(32, 96)}>"
+        profile["i2"] = f"<r {_rand_range(24, 96)}>"
+        profile["i3"] = ""
+        profile["i4"] = ""
+        profile["i5"] = ""
     return profile
 
 def _parse_config_peer_keys(path: Path) -> set[str]:
