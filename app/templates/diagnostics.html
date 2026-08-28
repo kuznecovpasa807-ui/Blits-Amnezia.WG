@@ -48,6 +48,8 @@
                             </div>
                             {% if check.ok %}
                             <span class="badge badge-success"><i class="fa-solid fa-check"></i> OK</span>
+                            {% elif check.action_url %}
+                            <a class="badge badge-danger badge-action" href="{{ check.action_url }}"><i class="fa-solid fa-wrench"></i> {{ check.action_label or 'Настроить' }}</a>
                             {% else %}
                             <span class="badge badge-danger"><i class="fa-solid fa-xmark"></i> Ошибка</span>
                             {% endif %}

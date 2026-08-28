@@ -123,8 +123,20 @@ def _diagnostic_checks() -> list[dict]:
         {"name": "Amnezia 1 / Legacy interface", "ok": os.path.exists(f"/sys/class/net/{LEGACY_INTERFACE}"), "message": f"{LEGACY_INTERFACE} найден" if os.path.exists(f"/sys/class/net/{LEGACY_INTERFACE}") else f"{LEGACY_INTERFACE} не найден"},
         {"name": "Amnezia 2.0 config", "ok": AWG_CONFIG_FILE.exists(), "message": str(AWG_CONFIG_FILE)},
         {"name": "Amnezia 1 / Legacy config", "ok": LEGACY_CONFIG_FILE.exists(), "message": str(LEGACY_CONFIG_FILE)},
-        {"name": "HTTPS certificate", "ok": cert_path.exists(), "message": str(cert_path) if cert_path.exists() else "сертификат для IP/домена не найден"},
-        {"name": "Secret web path", "ok": bool(web_path), "message": web_path or "секретный путь не задан"},
+        {
+            "name": "HTTPS certificate",
+            "ok": cert_path.exists(),
+            "message": str(cert_path) if cert_path.exists() else "сертификат для IP/домена не найден",
+            "action_url": "/settings/panel#panel-access",
+            "action_label": "Настроить",
+        },
+        {
+            "name": "Secret web path",
+            "ok": bool(web_path),
+            "message": web_path or "секретный путь не задан",
+            "action_url": "/settings/panel#security-actions",
+            "action_label": "Настроить",
+        },
     ]
 
     legacy_text = LEGACY_CONFIG_FILE.read_text(errors="ignore") if LEGACY_CONFIG_FILE.exists() else ""
